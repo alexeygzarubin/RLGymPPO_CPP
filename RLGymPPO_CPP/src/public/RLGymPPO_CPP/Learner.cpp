@@ -110,14 +110,14 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	}
 
 	RG_LOG("\tCreating experience buffer...");
-	expBuffer = new ExperienceBuffer(config.expBufferSize, config.randomSeed, device);
+	expBuffer = std::make_unique<ExperienceBuffer>(config.expBufferSize, config.randomSeed, device);
 
 	RG_LOG("\tCreating PPO Learner...");
-	ppo = new PPOLearner(obsSize, actionAmount, config.ppo, device);
+	ppo = std::make_unique<PPOLearner>(obsSize, actionAmount, config.ppo, device);
 
 	RG_LOG("\tCreating agent manager...");
-	agentMgr = new ThreadAgentManager(
-		ppo->policy, ppo->policyHalf, expBuffer, 
+	agentMgr = std::make_unique<ThreadAgentManager>(
+		ppo->policy, ppo->policyHalf, expBuffer.get(), 
 		config.standardizeOBS, config.deterministic, device.is_cpu() && torch::get_num_threads() > 1,
 		(uint64_t)(config.timestepsPerIteration * 1.5f),
 		device
@@ -127,21 +127,21 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	agentMgr->CreateAgents(envCreateFn, config.numThreads, config.numGamesPerThread);
 
 	if (config.renderMode) {
-		renderSender = new RenderSender();
-		agentMgr->renderSender = renderSender;
+		renderSender = std::make_unique<RenderSender>();
+		agentMgr->renderSender = renderSender.get();
 		agentMgr->renderTimeScale = config.renderTimeScale;
 		agentMgr->renderDuringTraining = config.renderDuringTraining;
 	} else {
-		renderSender = NULL;
+		renderSender = nullptr;
 	}
 
 	if (config.skillTrackerConfig.enabled) {
 		if (config.skillTrackerConfig.envCreateFunc == NULL)
 			config.skillTrackerConfig.envCreateFunc = envCreateFn;
 
-		skillTracker = new SkillTracker(config.skillTrackerConfig, renderSender);
+		skillTracker = std::make_unique<SkillTracker>(config.skillTrackerConfig, renderSender.get());
 	} else {
-		skillTracker = NULL;
+		skillTracker = nullptr;
 	}
 
 	if (!config.checkpointLoadFolder.empty())
@@ -150,10 +150,13 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	if (config.sendMetrics) {
 		if (!runID.empty())
 			RG_LOG("\tRun ID: " << runID);
-		metricSender = new MetricSender(config.metricsProjectName, config.metricsGroupName, config.metricsRunName, runID);
+		metricSender = std::make_unique<MetricSender>(config.metricsProjectName, config.metricsGroupName, config.metricsRunName, runID);
 	} else {
-		metricSender = NULL;
+		metricSender = nullptr;
 	}
+
+	// Release the GIL from the main thread so that background threads can acquire it
+	globalGilRelease = new pybind11::gil_scoped_release();
 }
 
 template <typename T>
@@ -502,7 +505,7 @@ void RLGPC::Learner::Learn() {
 				agentMgr->disableCollection = true;
 
 			try {
-				ppo->Learn(expBuffer, report);
+				ppo->Learn(expBuffer.get(), report);
 			} catch (std::exception& e) {
 				RG_ERR_CLOSE("Exception during PPOLearner::Learn(): " << e.what());
 			}
@@ -587,8 +590,9 @@ void RLGPC::Learner::Learn() {
 		}
 
 		// Update metric sender
-		if (config.sendMetrics)
+		if (config.sendMetrics) {
 			metricSender->Send(report);
+		}
 
 		// Save if needed
 		tsSinceSave += timestepsCollected;
@@ -736,10 +740,8 @@ std::vector<RLGPC::Report> RLGPC::Learner::GetAllGameMetrics() {
 }
 
 RLGPC::Learner::~Learner() {
-	delete ppo;
-	delete agentMgr;
-	delete expBuffer;
-	delete metricSender;
-	delete renderSender;
+	// Re-acquire GIL so that interpreter can be properly finalized
+	delete (pybind11::gil_scoped_release*)globalGilRelease;
+	metricSender.reset(); // Destroy MetricSender and its Python objects BEFORE finalizing the interpreter
 	pybind11::finalize_interpreter();
 }

@@ -11,16 +11,16 @@ namespace RLGPC {
 
 		size_t oldSize = size;
 
-		for (auto itr1 = data.begin(), itr2 = other.data.begin(); itr1 != data.end(); itr1++, itr2++) {
-			auto ourT = itr1->slice(0, 0, size); // Remove our capacity
-			auto otherT = *itr2; // Include capacity
-			*itr1 = TorchFuncs::ConcatSafe(ourT, otherT);
+		for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
+			auto ourT = data[i].slice(0, 0, size); // Remove our capacity
+			auto otherT = other.data[i]; // Include capacity
+			data[i] = TorchFuncs::ConcatSafe(ourT, otherT);
 		}
 
 		size = oldSize + other.size;
 		capacity = oldSize + other.capacity;
 
-		assert(data.begin()->size(0) == capacity);
+		assert(data[0].size(0) == capacity);
 	}
 
 	void GameTrajectory::MultiAppend(const std::vector<GameTrajectory>& others) {
@@ -47,8 +47,10 @@ namespace RLGPC {
 
 	void GameTrajectory::RemoveCapacity() {
 		if (capacity > size)
-			for (torch::Tensor& t : data)
+			for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
+				torch::Tensor& t = data[i];
 				t = t.slice(0, 0, size);
+			}
 	}
 
 	void GameTrajectory::AppendSingleStep(TrajectoryTensors step) {
@@ -63,24 +65,24 @@ namespace RLGPC {
 				DoubleReserve();
 
 			torch::Tensor indexTensor = torch::tensor((int64_t)size);
-			for (auto itr1 = data.begin(), itr2 = step.begin(); itr1 != data.end(); itr1++, itr2++) {
-				torch::Tensor& t = *itr1;
-				t.index_copy_(0, indexTensor, itr2->unsqueeze(0));
+			for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
+				torch::Tensor& t = data[i];
+				t.index_copy_(0, indexTensor, step[i].unsqueeze(0));
 			}
 
 			size++;
 		} else {
-			for (auto itr1 = data.begin(), itr2 = step.begin(); itr1 != data.end(); itr1++, itr2++) {
-				*itr1 = itr2->unsqueeze(0);
+			for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
+				data[i] = step[i].unsqueeze(0);
 			}
-
 			size = capacity = 1;
 		}
 	}
 
 	void GameTrajectory::DoubleReserve() {
 		if (capacity > 0) {
-			for (torch::Tensor& t : data) {
+			for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
+				torch::Tensor& t = data[i];
 				// TODO: This is annoying, is there a better way to do this?
 				//	t.repeat() requires you specify the amount for all dimensions
 				auto repeatSize = std::vector<int64_t>(t.dim(), 1);

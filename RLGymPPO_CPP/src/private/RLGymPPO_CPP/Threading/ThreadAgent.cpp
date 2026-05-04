@@ -112,7 +112,19 @@ void _RunFunc(ThreadAgent* ta) {
 			// So we will need to slice the section of it that is for this game
 			auto actionSlice = actionResults.action.slice(0, actionsOffset, actionsOffset + numPlayers);
 
-			stepResults[i] = game->Step(TENSOR_TO_ILIST(actionSlice));
+			try {
+				IList temp_ilist;
+				try {
+					temp_ilist = TENSOR_TO_ILIST(actionSlice);
+				} catch (const std::exception& e) {
+					std::cout << "CRITICAL ERROR: Exception during TENSOR_TO_ILIST: " << e.what() << " size: " << actionSlice.size(0) << std::endl; std::exit(1);
+				}
+				stepResults[i] = game->Step(temp_ilist);
+			} catch (const std::exception& e) {
+				std::cout << "CRITICAL ERROR: Exception during game->Step(): " << e.what() << std::endl; std::exit(1);
+			} catch (...) {
+				RG_ERR_CLOSE("Unknown Exception during game->Step()!");
+			}
 
 			actionsOffset += numPlayers;
 		}

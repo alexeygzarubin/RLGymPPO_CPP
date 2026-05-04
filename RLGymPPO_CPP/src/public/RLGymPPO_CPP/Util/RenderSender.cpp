@@ -89,6 +89,7 @@ void RLGPC::RenderSender::Send(const GameState& state, const ActionSet& actions)
 	std::string jStr = j.dump();
 
 	try {
+		py::gil_scoped_acquire acquire;
 		pyMod.attr("render_state")(jStr);
 	} catch (std::exception& e) {
 		RG_ERR_CLOSE("RenderSender: Failed to send gamestate, exception: " << e.what());

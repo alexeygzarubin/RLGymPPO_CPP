@@ -17,7 +17,9 @@ className& operator= (const className&) = delete
 #define RG_ERR_CLOSE(s) { \
 std::string _errorStr = RS_STR("RG FATAL ERROR: " << s); \
 RG_LOG(_errorStr); \
-throw std::runtime_error(_errorStr); \
+std::ofstream errDbg("crash_debug.txt"); \
+errDbg << _errorStr << "\n"; \
+errDbg.close(); \
 exit(EXIT_FAILURE); \
 }
 

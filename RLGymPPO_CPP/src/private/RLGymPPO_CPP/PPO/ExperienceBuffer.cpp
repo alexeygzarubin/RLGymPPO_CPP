@@ -23,9 +23,9 @@ void RLGPC::ExperienceBuffer::SubmitExperience(ExperienceTensors& _data) {
 	);
 #endif
 
-	for (auto itr1 = data.begin(), itr2 = _data.begin(); itr1 != data.end(); itr1++, itr2++) {
-		Tensor& ourTen = *itr1;
-		Tensor& addTen = *itr2;
+	for (size_t i = 0; i < ExperienceTensors::TENSOR_AMOUNT; i++) {
+		Tensor& ourTen = data[i];
+		Tensor& addTen = _data[i];
 
 		int64_t addAmount = addTen.size(0);
 
@@ -67,12 +67,14 @@ void RLGPC::ExperienceBuffer::SubmitExperience(ExperienceTensors& _data) {
 		RG_PARA_ASSERT(ourTen[endIdx - 1].equal(addTen[addTen.size(0) - 1]));
 	}
 
-	curSize = RS_MIN(curSize + _data.begin()->size(0), maxSize);
+	curSize = RS_MIN(curSize + _data[0].size(0), maxSize);
 
 #ifdef RG_PARANOID_MODE
 	// Make sure tensors are all the right size
-	for (Tensor& t : data)
+	for (size_t i = 0; i < ExperienceTensors::TENSOR_AMOUNT; i++) {
+		Tensor& t = data[i];
 		RG_PARA_ASSERT(t.size(0) == maxSize);
+	}
 
 	// Make sure our calculation of rewards matches the target
 	RG_PARA_ASSERT(data.rewards.slice(0, 0, curSize).equal(rewardsTarget));

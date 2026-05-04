@@ -45,6 +45,22 @@ namespace RLGSC {
 			return allRewards;
 		}
 
+		virtual float GetReward(const PlayerData& player, const GameState& state, const Action& prevAction) {
+			float r = 0;
+			for (int i = 0; i < rewardFuncs.size(); i++) {
+				r += rewardFuncs[i]->GetReward(player, state, prevAction) * rewardWeights[i];
+			}
+			return r;
+		}
+
+		virtual float GetFinalReward(const PlayerData& player, const GameState& state, const Action& prevAction) {
+			float r = 0;
+			for (int i = 0; i < rewardFuncs.size(); i++) {
+				r += rewardFuncs[i]->GetFinalReward(player, state, prevAction) * rewardWeights[i];
+			}
+			return r;
+		}
+
 		virtual ~CombinedReward() {
 			if (ownsFuncs)
 				for (auto func : rewardFuncs)

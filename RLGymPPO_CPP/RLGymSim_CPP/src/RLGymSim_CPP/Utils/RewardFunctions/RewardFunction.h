@@ -1,6 +1,8 @@
 #pragma once
 #include "../Gamestates/GameState.h"
 #include "../BasicTypes/Action.h"
+#include <iostream>
+#include <typeinfo>
 
 // https://github.com/AechPro/rocket-league-gym-sim/blob/main/rlgym_sim/utils/reward_functions/reward_function.py
 namespace RLGSC {
@@ -11,6 +13,7 @@ namespace RLGSC {
 		virtual void PreStep(const GameState& state) {}
 
 		virtual float GetReward(const PlayerData& player, const GameState& state, const Action& prevAction) {
+			std::cout << "GetReward() is unimplemented for class: " << typeid(*this).name() << std::endl;
 			throw std::runtime_error("GetReward() is unimplemented");
 			return 0;
 		}

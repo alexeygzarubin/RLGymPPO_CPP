@@ -35,5 +35,13 @@ namespace RLGSC {
 
 		// Get all rewards for all players
 		virtual std::vector<float> GetAllRewards(const GameState& state, const ActionSet& prevActions, bool final);
+
+		virtual float GetReward(const PlayerData& player, const GameState& state, const Action& prevAction) {
+			return childFunc->GetReward(player, state, prevAction);
+		}
+
+		virtual float GetFinalReward(const PlayerData& player, const GameState& state, const Action& prevAction) {
+			return childFunc->GetFinalReward(player, state, prevAction);
+		}
 	};
 }

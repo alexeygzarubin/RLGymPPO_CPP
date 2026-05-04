@@ -66,38 +66,50 @@ namespace RLGSC {
 	}
 
 	Gym::StepResult Gym::Step(const ActionParser::Input& actionsData) {
-		ActionSet actions = match->ParseActions(actionsData, prevState);
-		match->prevActions = actions;
+		try {
+			// std::cout << "Gym::Step: Parsing actions" << std::endl;
+			ActionSet actions = match->ParseActions(actionsData, prevState);
+			match->prevActions = actions;
 
-		GameState state;
+			GameState state;
 
-		{ // Step arena with actions
-			auto carItr = arena->_cars.begin();
-			for (int i = 0; i < actions.size(); i++) {
-				(*carItr)->controls = (CarControls)actions[i];
-				carItr++;
+			{ // Step arena with actions
+				// std::cout << "Gym::Step: Stepping arena" << std::endl;
+				auto carItr = arena->_cars.begin();
+				for (int i = 0; i < actions.size(); i++) {
+					(*carItr)->controls = (CarControls)actions[i];
+					carItr++;
+				}
+
+				arena->Step(tickSkip - actionDelay);
+				if (arena->gameMode != GameMode::HEATSEEKER)
+					eventTracker.Update(arena);
+				state = prevState; // All callbacks have been hit
+				state.UpdateFromArena(arena);
+				arena->Step(actionDelay);
+				totalTicks += tickSkip;
+				totalSteps++;
 			}
 
-			arena->Step(tickSkip - actionDelay);
-			if (arena->gameMode != GameMode::HEATSEEKER)
-				eventTracker.Update(arena);
-			state = prevState; // All callbacks have been hit
-			state.UpdateFromArena(arena);
-			arena->Step(actionDelay);
-			totalTicks += tickSkip;
-			totalSteps++;
+			// std::cout << "Gym::Step: Building observations" << std::endl;
+			FList2 obs = match->BuildObservations(state);
+			
+			// std::cout << "Gym::Step: Checking IsDone" << std::endl;
+			bool done = match->IsDone(state);
+			
+			// std::cout << "Gym::Step: Getting Rewards" << std::endl;
+			FList rewards = match->GetRewards(state, done);
+			prevState = state;
+
+			return StepResult {
+				obs,
+				rewards,
+				done,
+				state
+			};
+		} catch (const std::exception& e) {
+			std::cout << "CRITICAL ERROR: Gym::Step FAILED with: " << e.what() << std::endl;
+			std::exit(1);
 		}
-
-		FList2 obs = match->BuildObservations(state);
-		bool done = match->IsDone(state);
-		FList rewards = match->GetRewards(state, done);
-		prevState = state;
-
-		return StepResult {
-			obs,
-			rewards,
-			done,
-			state
-		};
 	}
 }

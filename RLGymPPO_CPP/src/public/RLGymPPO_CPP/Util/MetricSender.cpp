@@ -29,15 +29,18 @@ RLGPC::MetricSender::MetricSender(std::string _projectName, std::string _groupNa
 }
 
 void RLGPC::MetricSender::Send(const Report& report) {
-	py::dict reportDict = {};
-
-	for (auto& pair : report.data)
-		reportDict[pair.first.c_str()] = pair.second;
-
 	try {
+		py::gil_scoped_acquire acquire;
+		py::dict reportDict = {};
+
+		for (auto& pair : report.data)
+			reportDict[pair.first.c_str()] = pair.second;
+
 		pyMod.attr("add_metrics")(reportDict);
 	} catch (std::exception& e) {
 		RG_ERR_CLOSE("MetricSender: Failed to add metrics, exception: " << e.what());
+	} catch (...) {
+		RG_ERR_CLOSE("MetricSender: Failed to add metrics, UNKNOWN EXCEPTION!");
 	}
 }
 

@@ -23,13 +23,35 @@ namespace RLGPC {
 			7;
 #endif
 
-		torch::Tensor* begin() { return &states; }
-		const torch::Tensor* begin() const { return &states; }
-		torch::Tensor* end() { return &states + TENSOR_AMOUNT; }
-		const torch::Tensor* end() const { return &states + TENSOR_AMOUNT; }
-
-		torch::Tensor& operator[](size_t index) { return *(begin() + index); }
-		const torch::Tensor& operator[](size_t index) const { return *(begin() + index); }
+		torch::Tensor& operator[](size_t index) { 
+#ifdef RG_PARANOID_MODE
+            switch(index) {
+                case 0: return states;
+                case 1: return actions;
+                case 2: return logProbs;
+                case 3: return rewards;
+                case 4: return debugCounters;
+                case 5: return nextStates;
+                case 6: return dones;
+                case 7: return truncateds;
+                default: throw std::runtime_error("Invalid tensor index");
+            }
+#else
+            switch(index) {
+                case 0: return states;
+                case 1: return actions;
+                case 2: return logProbs;
+                case 3: return rewards;
+                case 4: return nextStates;
+                case 5: return dones;
+                case 6: return truncateds;
+                default: throw std::runtime_error("Invalid tensor index");
+            }
+#endif
+        }
+		const torch::Tensor& operator[](size_t index) const { 
+			return const_cast<TrajectoryTensors*>(this)->operator[](index);
+		}
 	};
 
 	// A container for the timestep data of a specific agent

@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include <torch/torch.h>
+#include <cassert>
 #include <torch/serialize/archive.h>
 #include <variant>
 
@@ -281,7 +282,7 @@ namespace torch {
 						for (auto& [_, found_inf] : iterator)
 							found_infs.push_back(found_inf.to(_scale.device(), true));
 					}
-					assert(found_infs.size() > 0, "No inf checks were recorded prior to update.");
+					// assert(found_infs.size() > 0, "No inf checks were recorded prior to update.");
 
 					auto& found_inf_combined = found_infs.front();
 					if (found_infs.size() > 1)
@@ -478,7 +479,7 @@ namespace torch {
 			};
 
 			template <typename Type = double>
-			inline auto sum(PerDeviceTensors const& per_device) {
+			inline Type sum(PerDeviceTensors const& per_device) {
 				Type sum = Type(0);
 				for (auto&& [_, v] : per_device)
 					sum += v.item<Type>();

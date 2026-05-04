@@ -5,6 +5,7 @@
 #include "Util/MetricSender.h"
 #include "Util/RenderSender.h"
 #include "LearnerConfig.h"
+#include <memory>
 
 namespace RLGPC {
 
@@ -15,14 +16,15 @@ namespace RLGPC {
 	public:
 		LearnerConfig config;
 
-		class PPOLearner* ppo;
-		class ThreadAgentManager* agentMgr;
-		class ExperienceBuffer* expBuffer;
+		std::unique_ptr<class PPOLearner> ppo;
+		std::unique_ptr<class ThreadAgentManager> agentMgr;
+		std::unique_ptr<class ExperienceBuffer> expBuffer;
 		EnvCreateFn envCreateFn;
-		MetricSender* metricSender;
-		RenderSender* renderSender;
+		std::unique_ptr<MetricSender> metricSender;
+		std::unique_ptr<RenderSender> renderSender;
+		void* globalGilRelease = NULL;
 
-		struct SkillTracker* skillTracker;
+		std::unique_ptr<struct SkillTracker> skillTracker;
 
 		int obsSize;
 		int actionAmount;
