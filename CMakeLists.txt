@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.8)
 
 project("RLGymPPO_CPP_Example")
 
-add_executable(RLGymPPO_CPP_Example "./ExampleMain.cpp" "./RLBotClient.cpp" "./RLBotClient.h")
+add_executable(RLGymPPO_CPP_Example "./examplemain.cpp" "./RLBotClient.cpp" "./RLBotClient.h")
 
 # Set C++ version to 20
 set_target_properties(RLGymPPO_CPP_Example PROPERTIES LINKER_LANGUAGE CXX)
