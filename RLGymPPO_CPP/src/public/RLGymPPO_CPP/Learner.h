@@ -22,6 +22,8 @@ namespace RLGPC {
 		EnvCreateFn envCreateFn;
 		std::unique_ptr<MetricSender> metricSender;
 		std::unique_ptr<RenderSender> renderSender;
+		std::unique_ptr<class DiscretePolicy> policyInfer;
+		std::unique_ptr<class DiscretePolicy> policyInferHalf;
 		void* globalGilRelease = NULL;
 
 		std::unique_ptr<struct SkillTracker> skillTracker;

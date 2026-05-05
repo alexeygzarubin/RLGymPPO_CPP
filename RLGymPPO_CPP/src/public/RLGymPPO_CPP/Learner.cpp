@@ -60,6 +60,8 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	torch::manual_seed(config.randomSeed);
 
 	at::Device device = at::Device(at::kCPU);
+	at::Device inferDevice = at::Device(at::kCPU);
+
 	if (
 		config.deviceType == LearnerDeviceType::GPU_CUDA || 
 		(config.deviceType == LearnerDeviceType::AUTO && torch::cuda::is_available())
@@ -84,10 +86,20 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 				"Make sure your libtorch comes with CUDA support, and that CUDA is installed properly."
 			)
 		device = at::Device(at::kCUDA);
+		inferDevice = device;
+	} else if (config.deviceType == LearnerDeviceType::SPLIT_CPU_INFER_GPU_LEARN) {
+		if (!torch::cuda::is_available()) {
+			RG_ERR_CLOSE("Learner::Learner(): Cannot use SPLIT device mode because CUDA is not available!");
+		}
+		RG_LOG("\tUsing SPLIT device architecture (CPU for Inference, GPU for Backprop)...");
+		device = at::Device(at::kCUDA);
+		inferDevice = at::Device(at::kCPU);
 	} else {
 		RG_LOG("\tUsing CPU device...");
 		device = at::Device(at::kCPU);
+		inferDevice = device;
 	}
+
 
 	torch::set_num_interop_threads(1);
 	torch::set_num_threads(1);
@@ -110,17 +122,29 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	}
 
 	RG_LOG("\tCreating experience buffer...");
-	expBuffer = std::make_unique<ExperienceBuffer>(config.expBufferSize, config.randomSeed, device);
+	expBuffer = std::make_unique<ExperienceBuffer>(config.expBufferSize, config.randomSeed, inferDevice);
 
 	RG_LOG("\tCreating PPO Learner...");
 	ppo = std::make_unique<PPOLearner>(obsSize, actionAmount, config.ppo, device);
 
 	RG_LOG("\tCreating agent manager...");
+	DiscretePolicy* agentPolicy = ppo->policy;
+	DiscretePolicy* agentPolicyHalf = ppo->policyHalf;
+
+	if (inferDevice != device) {
+		policyInfer = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+		agentPolicy = policyInfer.get();
+		if (ppo->policyHalf) {
+			policyInferHalf = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+			agentPolicyHalf = policyInferHalf.get();
+		}
+	}
+
 	agentMgr = std::make_unique<ThreadAgentManager>(
-		ppo->policy, ppo->policyHalf, expBuffer.get(), 
-		config.standardizeOBS, config.deterministic, device.is_cpu() && torch::get_num_threads() > 1,
+		agentPolicy, agentPolicyHalf, expBuffer.get(), 
+		config.standardizeOBS, config.deterministic, inferDevice.is_cpu() && torch::get_num_threads() > 1,
 		(uint64_t)(config.timestepsPerIteration * 1.5f),
-		device
+		inferDevice
 	);
 
 	RG_LOG("\tCreating " << config.numThreads << " agents...");
@@ -397,6 +421,8 @@ void DisplayReport(const RLGPC::Report& report) {
 		"",
 		"Collected Steps/Second",
 		"Overall Steps/Second",
+		"Optimization SPS",
+		"Model Updates/Second",
 		"",
 		"Collection Time",
 		"-Policy Infer Time",
@@ -437,8 +463,29 @@ void DisplayReport(const RLGPC::Report& report) {
 	}
 }
 
+static void _CopyModelParams(torch::nn::Module* from, torch::nn::Module* to) {
+	RG_NOGRAD;
+	try {
+		auto fromParams = from->parameters();
+		auto toParams = to->parameters();
+		for (int i = 0; i < fromParams.size(); i++) {
+			auto scaledParams = fromParams[i].to(toParams[i].device(), toParams[i].dtype());
+			toParams[i].copy_(scaledParams, true);
+		}
+	} catch (std::exception& e) {
+		RG_ERR_CLOSE("_CopyModelParams() exception: " << e.what());
+	}
+}
+
 void RLGPC::Learner::Learn() {
 	RG_LOG("Learner::Learn():");
+
+	if (policyInfer) {
+		_CopyModelParams(ppo->policy, policyInfer.get());
+		if (policyInferHalf && ppo->policyHalf) {
+			_CopyModelParams(ppo->policyHalf, policyInferHalf.get());
+		}
+	}
 
 #ifdef RG_PARANOID_MODE
 	RG_LOG("NOTE: Paranoid mode active. Additional checks will be run that may impact performance.");
@@ -514,6 +561,13 @@ void RLGPC::Learner::Learn() {
 				agentMgr->disableCollection = false;
 
 			totalEpochs += config.ppo.epochs;
+
+			if (policyInfer) {
+				_CopyModelParams(ppo->policy, policyInfer.get());
+				if (policyInferHalf && ppo->policyHalf) {
+					_CopyModelParams(ppo->policyHalf, policyInferHalf.get());
+				}
+			}
 		}
 
 		// Free CUDA cache
@@ -569,6 +623,14 @@ void RLGPC::Learner::Learn() {
 		{ // Add timestep data to report
 			report["Collected Steps/Second"] = (int64_t)(timestepsCollected / trueCollectionTime);
 			report["Overall Steps/Second"] = (int64_t)(timestepsCollected / trueEpochTime);
+			if (ppoLearnTime > 0) {
+				int64_t modelUpdatesThisIteration = config.ppo.epochs * std::ceil((double)timestepsCollected / config.ppo.miniBatchSize);
+				report["Model Updates/Second"] = modelUpdatesThisIteration / ppoLearnTime;
+				report["Optimization SPS"] = (int64_t)((timestepsCollected * config.ppo.epochs) / ppoLearnTime);
+			} else {
+				report["Model Updates/Second"] = 0;
+				report["Optimization SPS"] = 0;
+			}
 			report["Timesteps Collected"] = timestepsCollected;
 			report["Cumulative Timesteps"] = totalTimesteps;
 		}

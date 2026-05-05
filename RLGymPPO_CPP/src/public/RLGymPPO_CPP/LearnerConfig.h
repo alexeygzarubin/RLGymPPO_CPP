@@ -7,7 +7,8 @@ namespace RLGPC {
 	enum class LearnerDeviceType {
 		AUTO,
 		CPU,
-		GPU_CUDA
+		GPU_CUDA,
+		SPLIT_CPU_INFER_GPU_LEARN
 	};
 
 	// https://github.com/AechPro/rlgym-ppo/blob/main/rlgym_ppo/learner.py
