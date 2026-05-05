@@ -498,6 +498,10 @@ void RLGPC::PPOLearner::LoadFrom(std::filesystem::path folderPath)  {
 
 	TorchLoadSaveAll(this, folderPath, true);
 
+	// Explicitly move to device after loading (fixes silent CPU fallback bug)
+	policy->to(device);
+	valueNet->to(device);
+
 	UpdateLearningRates(config.policyLR, config.criticLR);
 }
 
