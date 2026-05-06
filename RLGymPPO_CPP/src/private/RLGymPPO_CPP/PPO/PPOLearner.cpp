@@ -120,6 +120,11 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 
 			auto fnRunMinibatch = [&](int start, int stop) {
 
+				auto recordTime = [&](const std::string& name, double elapsed) {
+					std::lock_guard<std::mutex> lock(threadUpdateMutex);
+					report.Accum(name, elapsed);
+				};
+
 				float batchSizeRatio = (stop - start) / (float)config.batchSize;
 
 				// Send everything to the device and enforce correct shapes
@@ -133,9 +138,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 				Timer timer = {};
 				if (autocast) RG_AUTOCAST_ON();
 				auto vals = valueNet->Forward(obs); // 11%
-				threadUpdateMutex.lock();
-				report.Accum("PPO Value Estimate Time", timer.Elapsed());
-				threadUpdateMutex.unlock();
+				recordTime("PPO Value Estimate Time", timer.Elapsed());
 
 				timer.Reset();
 				torch::Tensor logProbs, entropy, ratio, clipped, policyLoss, ppoLoss;
@@ -147,15 +150,14 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					entropy = bpResult.entropy;
 
 					logProbs = logProbs.view_as(oldProbs);
-					threadUpdateMutex.lock();
-					report.Accum("PPO Backprop Data Time", timer.Elapsed());
-					threadUpdateMutex.unlock();
+					recordTime("PPO Backprop Data Time", timer.Elapsed());
 
 					// Compute PPO loss
 					ratio = exp(logProbs - oldProbs);
-					threadUpdateMutex.lock();
-					meanRatio += ratio.mean().detach().cpu().item<float>();
-					threadUpdateMutex.unlock();
+					{
+						std::lock_guard<std::mutex> lock(threadUpdateMutex);
+						meanRatio += ratio.mean().detach().cpu().item<float>();
+					}
 					clipped = clamp(
 						ratio, 1 - config.clipRange, 1 + config.clipRange
 					);
@@ -188,9 +190,10 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 						kl = klTensor.mean().detach().cpu().item<float>();
 
 						clipFraction = mean((abs(ratio - 1) > config.clipRange).to(kFloat)).cpu().item<float>();
-						threadUpdateMutex.lock();
-						clipFractions.push_back(clipFraction);
-						threadUpdateMutex.unlock();
+						{
+							std::lock_guard<std::mutex> lock(threadUpdateMutex);
+							clipFractions.push_back(clipFraction);
+						}
 					}
 				}
 
@@ -210,9 +213,9 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 						valueLoss.backward(); // 24%
 				}
 
-				threadUpdateMutex.lock();
+				recordTime("PPO Gradient Time", timer.Elapsed());
 				{
-					report.Accum("PPO Gradient Time", timer.Elapsed());
+					std::lock_guard<std::mutex> lock(threadUpdateMutex);
 
 					if (trainCritic)
 						meanValLoss += valueLoss.cpu().detach().item<float>();
@@ -222,7 +225,6 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					}
 					numMinibatchIterations += 1;
 				}
-				threadUpdateMutex.unlock();
 
 
 			};

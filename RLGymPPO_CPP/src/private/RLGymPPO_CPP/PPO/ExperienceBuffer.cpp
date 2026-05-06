@@ -65,17 +65,16 @@ RLGPC::ExperienceBuffer::SampleSet RLGPC::ExperienceBuffer::_GetSamples(const in
 std::vector<RLGPC::ExperienceBuffer::SampleSet> RLGPC::ExperienceBuffer::GetAllBatchesShuffled(int64_t batchSize) {
 
 	// Make list of shuffled sample indices
-	int64_t* indices = new int64_t[curSize];
-	std::iota(indices, indices + curSize, 0); // Fill ascending indices
-	std::shuffle(indices, indices + curSize, rng);
+	std::vector<int64_t> indices(curSize);
+	std::iota(indices.begin(), indices.end(), 0); // Fill ascending indices
+	std::shuffle(indices.begin(), indices.end(), rng);
 
 	// Get a sample set from each of the batches
 	std::vector<SampleSet> result;
 	for (int64_t startIdx = 0; startIdx + batchSize <= curSize; startIdx += batchSize) {
-		result.push_back(_GetSamples(indices + startIdx, batchSize));
+		result.push_back(_GetSamples(indices.data() + startIdx, batchSize));
 	}
 
-	delete[] indices;
 	return result;
 }
 
