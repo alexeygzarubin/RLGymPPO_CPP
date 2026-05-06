@@ -66,6 +66,7 @@ namespace RLGPC {
 		ExperienceTensors data;
 
 		int64_t curSize = 0;
+		int64_t head = 0;
 		int64_t maxSize;
 
 		std::default_random_engine rng;
@@ -86,7 +87,6 @@ namespace RLGPC {
 
 		
 
-		// Combine two tensors into one, removing older data if needed to fit target size
-		static torch::Tensor _Concat(torch::Tensor t1, torch::Tensor t2, int64_t size);
+
 	};
 }

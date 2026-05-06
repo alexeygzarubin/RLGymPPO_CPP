@@ -7,6 +7,7 @@ namespace RLGPC {
 
 		std::mutex lockMutex = {};
 		std::condition_variable condVar = {};
+		std::condition_variable waitVar = {};
 		bool shouldShutdown = false;
 		std::queue<std::function<void(void)>> _jobs = {};
 		std::vector<std::thread> threads = {};
@@ -48,6 +49,11 @@ namespace RLGPC {
 			return _activeJobCounter;
 		}
 
+		void WaitAll() {
+			std::unique_lock<std::mutex> lock(lockMutex);
+			waitVar.wait(lock, [this]() { return _activeJobCounter == 0 && _jobs.empty(); });
+		}
+
 		void _ThreadEntry(int i) {
 			std::function<void(void)> jobFunc;
 
@@ -73,6 +79,9 @@ namespace RLGPC {
 				{
 					std::unique_lock<std::mutex> lock(lockMutex);
 					_activeJobCounter--;
+					if (_activeJobCounter == 0 && _jobs.empty()) {
+						waitVar.notify_all();
+					}
 				}
 			}
 		}

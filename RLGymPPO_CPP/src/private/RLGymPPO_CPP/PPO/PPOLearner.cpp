@@ -116,11 +116,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 			policyOptimizer->zero_grad();
 			valueOptimizer->zero_grad();
 
-			// https://stackoverflow.com/questions/30297465/wait-for-all-threads-in-c
-			std::mutex threadLockMutex;
 			std::mutex threadUpdateMutex;
-			std::condition_variable threadCV;
-			std::atomic<int> threadCounter = 0;
 
 			auto fnRunMinibatch = [&](int start, int stop) {
 
@@ -228,9 +224,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 				}
 				threadUpdateMutex.unlock();
 
-				std::lock_guard<std::mutex> lk(threadLockMutex);
-				threadCounter--;
-				threadCV.notify_all();
+
 			};
 
 			if (this->device.is_cpu()) {
@@ -252,8 +246,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					this->minibatchThreadPool->StartJob(std::bind(fnRunMinibatch, start, stop));
 				}
 
-				while (this->minibatchThreadPool->GetNumRunningJobs() > 0)
-					RG_SLEEP(1);
+				this->minibatchThreadPool->WaitAll();
 
 			} else {
 				for (int mbs = 0; mbs < config.batchSize; mbs += config.miniBatchSize) {
