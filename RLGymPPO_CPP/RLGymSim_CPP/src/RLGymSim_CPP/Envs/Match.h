@@ -31,7 +31,8 @@ namespace RLGSC {
 			ActionParser* actionParser,
 			StateSetter* stateSetter,
 			int teamSize = 1,
-			bool spawnOpponents = true
+			bool spawnOpponents = true,
+			int agentsToTrain = 0
 		) : 
 			rewardFn(rewardFn),
 			terminalConditions(terminalConditions),
@@ -40,9 +41,9 @@ namespace RLGSC {
 			stateSetter(stateSetter),
 			teamSize(teamSize),
 			spawnOpponents(spawnOpponents),
-			playerAmount(teamSize * (spawnOpponents ? 2 : 1))
+			playerAmount(agentsToTrain > 0 ? agentsToTrain : teamSize * (spawnOpponents ? 2 : 1))
 		{
-			prevActions.resize(playerAmount);
+			prevActions.resize(teamSize * (spawnOpponents ? 2 : 1));
 		}
 
 		void EpisodeReset(const GameState& initialState);

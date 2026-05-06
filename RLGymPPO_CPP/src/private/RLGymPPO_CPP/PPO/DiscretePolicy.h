@@ -6,7 +6,7 @@
 
 namespace RLGPC {
 	// https://github.com/AechPro/rlgym-ppo/blob/main/rlgym_ppo/ppo/discrete_policy.py
-	class DiscretePolicy : public torch::nn::Module {
+	class RG_IMEXPORT DiscretePolicy : public torch::nn::Module {
 	public:
 		torch::Device device;
 		torch::nn::Sequential seq;

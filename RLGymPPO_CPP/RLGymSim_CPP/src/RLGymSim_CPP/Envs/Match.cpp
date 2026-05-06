@@ -7,14 +7,15 @@ namespace RLGSC {
 			cond->Reset(initialState);
 		rewardFn->Reset(initialState);
 		obsBuilder->Reset(initialState);
+        actionParser->Reset(initialState);
 	}
 
 	FList2 Match::BuildObservations(const GameState& state) {
-		auto result = FList2(state.players.size());
+		auto result = FList2(playerAmount);
 
 		obsBuilder->PreStep(state);
 
-		for (int i = 0; i < state.players.size(); i++) {
+		for (int i = 0; i < playerAmount; i++) {
 			result[i] =
 				obsBuilder->BuildOBS(state.players[i], state, prevActions[i]);
 		}
@@ -23,10 +24,16 @@ namespace RLGSC {
 	}
 
 	FList Match::GetRewards(const GameState& state, bool done) {
-		auto result = FList(state.players.size());
+		auto result = FList(playerAmount);
 
 		rewardFn->PreStep(state);
-		return rewardFn->GetAllRewards(state, prevActions, done);
+		auto all_rewards = rewardFn->GetAllRewards(state, prevActions, done);
+
+		for (int i = 0; i < playerAmount; i++) {
+			result[i] = all_rewards[i];
+		}
+
+		return result;
 	}
 
 	bool Match::IsDone(const GameState& state) {
@@ -54,10 +61,10 @@ namespace RLGSC {
 	GameState Match::ResetState(Arena* arena) {
 		GameState newState = stateSetter->ResetState(arena);
 
-		if (newState.players.size() != playerAmount) {
+		if (newState.players.size() < playerAmount) {
 			RG_ERR_CLOSE(
-				"Match::ResetState(): New state has a different amount of players, "
-				"expected " << playerAmount << " but got " << newState.players.size() << ".\n"
+				"Match::ResetState(): New state has fewer players than playerAmount, "
+				"expected at least " << playerAmount << " but got " << newState.players.size() << ".\n"
 				"Changing number of players at state reset is currently not supported.\n" <<
 				"If you want variable player amounts, set a differing player amount per env."
 			);

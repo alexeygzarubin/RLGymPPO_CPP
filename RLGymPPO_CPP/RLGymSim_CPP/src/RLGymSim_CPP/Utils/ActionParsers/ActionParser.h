@@ -12,5 +12,6 @@ namespace RLGSC {
 
 		virtual ActionSet ParseActions(const Input& actionsData, const GameState& gameState) = 0;
 		virtual int GetActionAmount() = 0;
+        virtual void Reset(const GameState& initialState) {}
 	};
 }
