@@ -773,6 +773,13 @@ void RLGPC::Learner::UpdateLearningRates(float policyLR, float criticLR) {
 	ppo->UpdateLearningRates(policyLR, criticLR);
 }
 
+void RLGPC::Learner::SetEntropyCoef(float newCoef) {
+	config.ppo.entCoef = newCoef;
+	if (ppo) {
+		ppo->config.entCoef = newCoef;
+	}
+}
+
 void RLGPC::Learner::SetActionEntropyScales(RLGSC::FList newVals) {
 	RG_ASSERT(newVals.size() == actionAmount);
 	ppo->policy->actionEntropyScales = torch::tensor(newVals, ppo->policy->device);

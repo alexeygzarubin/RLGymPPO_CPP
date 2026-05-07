@@ -44,6 +44,7 @@ namespace RLGPC {
 		void AddNewExperience(class GameTrajectory& gameTraj, Report& report);
 
 		void UpdateLearningRates(float policyLR, float criticLR);
+        void SetEntropyCoef(float newCoef);
 
         void SetActionProbBonuses(RLGSC::FList newVals);
         void SetActionEntropyScales(RLGSC::FList newVals);
