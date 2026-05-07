@@ -13,7 +13,7 @@ RLGPC::MetricSender::MetricSender(std::string _projectName, std::string _groupNa
 	try {
 		pyMod = py::module::import("python_scripts.metric_receiver");
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("MetricSender: Failed to import metrics receiver, exception: " << e.what());
+		throw std::runtime_error(std::string("MetricSender: Failed to import metrics receiver, exception: ") + e.what());
 	}
 
 	try {
@@ -22,7 +22,7 @@ RLGPC::MetricSender::MetricSender(std::string _projectName, std::string _groupNa
 		RG_LOG(" > " << (runID.empty() ? "Starting" : "Continuing") << " run with ID : \"" << curRunID << "\"...");
 
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("MetricSender: Failed to initialize in Python, exception: " << e.what());
+		throw std::runtime_error(std::string("MetricSender: Failed to initialize in Python, exception: ") + e.what());
 	}
 
 	RG_LOG(" > MetricSender initalized.");
@@ -38,9 +38,9 @@ void RLGPC::MetricSender::Send(const Report& report) {
 
 		pyMod.attr("add_metrics")(reportDict);
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("MetricSender: Failed to add metrics, exception: " << e.what());
+		throw std::runtime_error(std::string("MetricSender: Failed to add metrics, exception: ") + e.what());
 	} catch (...) {
-		RG_ERR_CLOSE("MetricSender: Failed to add metrics, UNKNOWN EXCEPTION!");
+		throw std::runtime_error("MetricSender: Failed to add metrics, UNKNOWN EXCEPTION!");
 	}
 }
 

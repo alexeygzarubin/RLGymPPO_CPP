@@ -8,6 +8,25 @@
 using namespace RLGSC;
 using namespace RLGPC;
 
+/**
+ * @brief Constructs an inference unit for stand-alone evaluation or Python bridging.
+ *
+ * Safety Constraints:
+ * `InferUnit` is typically used when binding the C++ models back to a Python environment
+ * for visual evaluation or external processing. As such, it is entirely decoupled from 
+ * the concurrent training architecture (`ThreadAgent` / `ThreadAgentManager`).
+ * Checkpoint loading incorporates aggressive shape validation to prevent memory corruption
+ * during out-of-process bindings.
+ *
+ * @param obsBuilder Observation extraction interface.
+ * @param actionParser Interface converting tensor bounds into actionable controller inputs.
+ * @param modelPath Disk path to the pre-trained LibTorch `.pt` module.
+ * @param isPolicy Whether this unit evaluates an actor (Policy) or a critic (ValueEstimator).
+ * @param obsSize Total length of the unrolled observation array.
+ * @param layerSizes (Legacy) Layer sizes for generic initialization.
+ * @param gpu Whether to force evaluation onto the GPU device.
+ * @throws std::runtime_error if checkpoint deserialization fails.
+ */
 RLGPC::InferUnit::InferUnit(
 	OBSBuilder* obsBuilder, ActionParser* actionParser, 
 	std::filesystem::path modelPath, bool isPolicy, int obsSize, const IList& layerSizes, bool gpu)
@@ -30,10 +49,7 @@ RLGPC::InferUnit::InferUnit(
 		auto streamIn = std::ifstream(modelPath, std::ios::binary);
 		torch::load(policy ? policy->seq : critic->seq, streamIn, device);
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE(
-			"Failed to load model, checkpoint may be corrupt or of different model arch.\n" <<
-			"Exception: " << e.what()
-		);
+		throw std::runtime_error(std::string("InferUnit::InferUnit: Failed to load model, checkpoint may be corrupt or of different model arch. Exception: ") + e.what());
 	}
 
 	RG_LOG(" > Done!");
@@ -66,7 +82,7 @@ ActionSet RLGPC::InferUnit::InferPolicyAll(
 	policy->temperature = temperature;
 	torch::Tensor inputTen = FLIST2_TO_TENSOR(obsSet).to(policy->device);
 	auto actionResult = policy->GetAction(inputTen, deterministic);
-	auto actionParserInput = TENSOR_TO_ILIST(actionResult.action);
+	auto actionParserInput = TENSOR_TO_ILIST(actionResult.action.flatten());
 
 	return actionParser->ParseActions(actionParserInput, state);
 }
@@ -91,8 +107,12 @@ Action RLGPC::InferUnit::InferPolicySingle(
 	policy->temperature = temperature;
 	torch::Tensor inputTen = torch::tensor(obs).to(policy->device);
 	auto actionResult = policy->GetAction(inputTen, deterministic);
-	IList actionParserInput = IList(state.players.size());
-	actionParserInput[playerIndex] = actionResult.action.item<int>();
+	int actAmt = policy->actionAmount;
+	IList actionParserInput = IList(state.players.size() * actAmt);
+	auto flatAction = TENSOR_TO_ILIST(actionResult.action.flatten());
+	for(int a=0; a < actAmt; ++a) {
+		actionParserInput[playerIndex * actAmt + a] = flatAction[a];
+	}
 
 	return actionParser->ParseActions(actionParserInput, state)[playerIndex];
 }

@@ -5,22 +5,58 @@
 
 using namespace RLGPC;
 
+/**
+ * @brief Aggregates the current observation arrays from all managed Rocket League environments.
+ *
+ * Safety Constraints:
+ * If a game instance fails to return a valid observation array, passing an empty tensor
+ * to `torch::concat` will hard crash the entire application via a LibTorch core dump.
+ * We proactively validate `.numel()` and `.dim()` here and fail-fast using standard C++ exceptions.
+ *
+ * @param games Vector of active GameInst pointers.
+ * @return Concatenated 2D tensor representing the state of all active matches.
+ * @throws std::invalid_argument if the input vector is empty.
+ * @throws std::runtime_error if any game returns a malformed observation tensor.
+ */
 torch::Tensor MakeGamesOBSTensor(std::vector<GameInst*>& games) {
-	// TODO: Use of torch::concat is likely slow
-
-	assert(!games.empty());
+	if (games.empty()) {
+		throw std::invalid_argument("MakeGamesOBSTensor: Expected non-empty games vector. Received empty vector.");
+	}
 	std::vector<torch::Tensor> obsTensors = {};
-	for (auto game : games)
-		obsTensors.push_back(FLIST2_TO_TENSOR(game->curObs));
+	for (auto game : games) {
+		auto t = FLIST2_TO_TENSOR(game->curObs);
+		if (t.dim() == 0 || t.numel() == 0) {
+			throw std::runtime_error("MakeGamesOBSTensor: Expected valid observation tensor. Received empty tensor.");
+		}
+		obsTensors.push_back(t);
+	}
 
 	try {
 		return torch::concat(obsTensors);
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("Failed to concat OBS tensors: " << e.what());
-		return {};
+		throw std::runtime_error(std::string("MakeGamesOBSTensor: Failed to concat OBS tensors: ") + e.what());
 	}
 }
 
+/**
+ * @brief The infinite execution loop for a parallel thread agent.
+ *
+ * Architectural Intent:
+ * This function forms the core of the >60,000 SPS parallel rollout pipeline. It executes
+ * the RocketSim environment loop for `ta->numGames` simultaneously. To maximize throughput,
+ * it runs policy inference independently per thread.
+ *
+ * Thread Safety & Synchronization:
+ * - Policies: Each `ThreadAgent` receives a strictly thread-local clone of the policy.
+ * - Locks: Uses `ta->gameStepMutex` to prevent race conditions during trajectory tracking, 
+ *          and `mgr->inferMutex` to prevent concurrent GPU access issues if blockConcurrentInfer is set.
+ * - Error Handling: All nested operations (LibTorch inference, RocketSim stepping) are wrapped
+ *                   in try-catch blocks. Any exception thrown guarantees locks are released
+ *                   first to avoid cross-thread deadlocks, followed by throwing a high-context 
+ *                   `std::runtime_error` to kill the pipeline cleanly.
+ *
+ * @param ta Pointer to the thread's specific agent context.
+ */
 void _RunFunc(ThreadAgent* ta) {
 	RG_NOGRAD;
 	ta->isRunning = true;
@@ -86,7 +122,8 @@ void _RunFunc(ThreadAgent* ta) {
 		try {
 			actionResults = policy->GetAction(curObsTensorDevice, deterministic);
 		} catch (std::exception& e) {
-			RG_ERR_CLOSE("Exception during policy->GetAction(): " << e.what());
+			if (blockConcurrentInfer) mgr->inferMutex.unlock();
+			throw std::runtime_error(std::string("ThreadAgent::_RunFunc: Exception during policy->GetAction(): ") + e.what());
 		}
 		if (blockConcurrentInfer)
 			mgr->inferMutex.unlock();
@@ -115,15 +152,15 @@ void _RunFunc(ThreadAgent* ta) {
 			try {
 				IList temp_ilist;
 				try {
-					temp_ilist = TENSOR_TO_ILIST(actionSlice);
+					temp_ilist = TENSOR_TO_ILIST(actionSlice.flatten());
 				} catch (const std::exception& e) {
-					std::cout << "CRITICAL ERROR: Exception during TENSOR_TO_ILIST: " << e.what() << " size: " << actionSlice.size(0) << std::endl; std::exit(1);
+					throw std::runtime_error(std::string("ThreadAgent::_RunFunc: Exception during TENSOR_TO_ILIST: ") + e.what() + " size: " + std::to_string(actionSlice.size(0)));
 				}
 				stepResults[i] = game->Step(temp_ilist);
 			} catch (const std::exception& e) {
-				std::cout << "CRITICAL ERROR: Exception during game->Step(): " << e.what() << std::endl; std::exit(1);
+				throw std::runtime_error(std::string("ThreadAgent::_RunFunc: Exception during game->Step(): ") + e.what());
 			} catch (...) {
-				RG_ERR_CLOSE("Unknown Exception during game->Step()!");
+				throw std::runtime_error("ThreadAgent::_RunFunc: Unknown Exception during game->Step()!");
 			}
 
 			actionsOffset += numPlayers;

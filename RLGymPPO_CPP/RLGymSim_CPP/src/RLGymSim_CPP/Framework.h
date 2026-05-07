@@ -20,7 +20,7 @@ RG_LOG(_errorStr); \
 std::ofstream errDbg("crash_debug.txt"); \
 errDbg << _errorStr << "\n"; \
 errDbg.close(); \
-exit(EXIT_FAILURE); \
+throw std::runtime_error(_errorStr); \
 }
 
 #ifndef RG_UNSAFE

@@ -25,22 +25,28 @@ namespace RLGPC {
 
 		RG_NO_COPY(DiscretePolicy);
 
-		void CopyTo(DiscretePolicy& to);
+		virtual DiscretePolicy* Clone() const;
 
-		torch::Tensor GetOutput(torch::Tensor input);
+		virtual std::vector<uint64_t> GetSizes() const;
+		virtual void Save(std::filesystem::path path) const;
+		virtual void Load(std::filesystem::path path, torch::Device device);
 
-		torch::Tensor GetActionProbs(torch::Tensor obs);
+		virtual void CopyTo(DiscretePolicy& to);
+
+		virtual torch::Tensor GetOutput(torch::Tensor input);
+
+		virtual torch::Tensor GetActionProbs(torch::Tensor obs);
 
 		struct ActionResult {
 			torch::Tensor action, logProb;
 		};
-		ActionResult GetAction(torch::Tensor obs, bool deterministic);
+		virtual ActionResult GetAction(torch::Tensor obs, bool deterministic);
 		
 		struct BackpropResult {
 			torch::Tensor actionLogProbs;
 			torch::Tensor entropy;
 		};
-		BackpropResult GetBackpropData(torch::Tensor obs, torch::Tensor acts);
+		virtual BackpropResult GetBackpropData(torch::Tensor obs, torch::Tensor acts);
 
 		~DiscretePolicy() = default;
 	};

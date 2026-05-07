@@ -6,6 +6,10 @@ namespace RLGPC {
 	struct PPOLearnerConfig {
 		IList policyLayerSizes = { 256, 256, 256 };
 		IList criticLayerSizes = { 256, 256, 256 };
+		std::string policy_type = "MLP";
+		int max_entities = 41;
+		int q_features = 24;
+		int kv_features = 32;
 		int64_t batchSize = 50 * 1000;
 		int epochs = 10;
 		float policyLR = 3e-4f; // Policy learning rate

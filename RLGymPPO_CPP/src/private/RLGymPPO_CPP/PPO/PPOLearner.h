@@ -11,17 +11,18 @@
 #include "../Util/gradscaler.hpp"
 #include "../Util/GradNoiseTracker.h"
 #include "../Util/ThreadPool.h"
+#include <memory>
 
 namespace RLGPC {
 	// https://github.com/AechPro/rlgym-ppo/blob/main/rlgym_ppo/ppo/ppo_learner.py
 	class PPOLearner {
 	public:
-		DiscretePolicy* policy, *policyHalf;
-		ValueEstimator* valueNet, *valueNetHalf;
-		torch::optim::Adam *policyOptimizer, *valueOptimizer;
+		std::unique_ptr<DiscretePolicy> policy, policyHalf;
+		std::unique_ptr<ValueEstimator> valueNet, valueNetHalf;
+		std::unique_ptr<torch::optim::Adam> policyOptimizer, valueOptimizer;
 		torch::nn::MSELoss valueLossFn;
 
-		GradNoiseTracker* noiseTrackerPolicy, *noiseTrackerValueNet;
+		std::unique_ptr<GradNoiseTracker> noiseTrackerPolicy, noiseTrackerValueNet;
 
 		PPOLearnerConfig config;
 		torch::Device device;

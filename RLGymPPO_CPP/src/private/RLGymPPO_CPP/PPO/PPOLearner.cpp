@@ -1,4 +1,5 @@
 #include "PPOLearner.h"
+#include <RLGymPPO_CPP/TransformerPolicy.h>
 
 #include "../Util/TorchFuncs.h"
 
@@ -22,7 +23,7 @@ void _CopyModelParamsHalf(nn::Module* from, nn::Module* to) {
 			toParams[i].copy_(scaledParams, true);
 		}
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("_CopyModelParamsHalf() exception: " << e.what());
+		throw std::runtime_error(std::string("PPOLearner::_CopyModelParamsHalf() exception: ") + e.what());
 	}
 }
 
@@ -35,32 +36,36 @@ RLGPC::PPOLearner::PPOLearner(int obsSpaceSize, int actSpaceSize, PPOLearnerConf
 	if (config.batchSize % config.miniBatchSize != 0)
 		RG_ERR_CLOSE("PPOLearner: config.batchSize must be a multiple of config.miniBatchSize");
 
-	policy = new DiscretePolicy(obsSpaceSize, actSpaceSize, config.policyLayerSizes, device, config.policyTemperature);
-	valueNet = new ValueEstimator(obsSpaceSize, config.criticLayerSizes, device);
+	if (config.policy_type == "EARL") {
+		policy = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, device, config.policyTemperature);
+	} else {
+		policy = std::make_unique<DiscretePolicy>(obsSpaceSize, actSpaceSize, config.policyLayerSizes, device, config.policyTemperature);
+	}
+	valueNet = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
 
 	if (config.halfPrecModels) {
-		policyHalf = new DiscretePolicy(obsSpaceSize, actSpaceSize, config.policyLayerSizes, device);
-		valueNetHalf = new ValueEstimator(obsSpaceSize, config.criticLayerSizes, device);
+		policyHalf = std::unique_ptr<DiscretePolicy>(policy->Clone());
+		valueNetHalf = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
 
-		_CopyModelParamsHalf(policy, policyHalf);
-		_CopyModelParamsHalf(valueNet, valueNetHalf);
+		_CopyModelParamsHalf(policy.get(), policyHalf.get());
+		_CopyModelParamsHalf(valueNet.get(), valueNetHalf.get());
 
 		policyHalf->to(RG_HALFPERC_TYPE);
 		valueNetHalf->to(RG_HALFPERC_TYPE);
 	} else {
-		policyHalf = NULL;
-		valueNetHalf = NULL;
+		policyHalf = nullptr;
+		valueNetHalf = nullptr;
 	}
-	policyOptimizer = new optim::Adam(policy->parameters(), optim::AdamOptions(config.policyLR));
-	valueOptimizer = new optim::Adam(valueNet->parameters(), optim::AdamOptions(config.criticLR));
+	policyOptimizer = std::make_unique<optim::Adam>(policy->parameters(), optim::AdamOptions(config.policyLR));
+	valueOptimizer = std::make_unique<optim::Adam>(valueNet->parameters(), optim::AdamOptions(config.criticLR));
 	valueLossFn = nn::MSELoss();
 
 	if (config.measureGradientNoise) {
-		noiseTrackerPolicy = new GradNoiseTracker(config.batchSize, config.gradientNoiseUpdateInterval, config.gradientNoiseAvgDecay);
-		noiseTrackerValueNet = new GradNoiseTracker(config.batchSize, config.gradientNoiseUpdateInterval, config.gradientNoiseAvgDecay);
+		noiseTrackerPolicy = std::make_unique<GradNoiseTracker>(config.batchSize, config.gradientNoiseUpdateInterval, config.gradientNoiseAvgDecay);
+		noiseTrackerValueNet = std::make_unique<GradNoiseTracker>(config.batchSize, config.gradientNoiseUpdateInterval, config.gradientNoiseAvgDecay);
 	} else {
-		noiseTrackerPolicy = NULL;
-		noiseTrackerValueNet = NULL;
+		noiseTrackerPolicy = nullptr;
+		noiseTrackerValueNet = nullptr;
 	}
 }
 
@@ -93,8 +98,8 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 	FList clipFractions = {};
 
 	// Save parameters first
-	auto policyBefore = _CopyParams(policy);
-	auto criticBefore = _CopyParams(valueNet);
+	auto policyBefore = _CopyParams(policy.get());
+	auto criticBefore = _CopyParams(valueNet.get());
 
 	bool trainPolicy = config.policyLR != 0;
 	bool trainCritic = config.criticLR != 0;
@@ -284,9 +289,9 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 			}
 
 			if (policyHalf)
-				_CopyModelParamsHalf(policy, policyHalf);
+				_CopyModelParamsHalf(policy.get(), policyHalf.get());
 			if (valueNetHalf)
-				_CopyModelParamsHalf(valueNet, valueNetHalf);
+				_CopyModelParamsHalf(valueNet.get(), valueNetHalf.get());
 			
 			if (autocast)
 				gradScaler->update();
@@ -311,8 +316,8 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 	}
 
 	// Compute magnitude of updates made to the policy and value estimator
-	auto policyAfter = _CopyParams(policy);
-	auto criticAfter = _CopyParams(valueNet);
+	auto policyAfter = _CopyParams(policy.get());
+	auto criticAfter = _CopyParams(valueNet.get());
 
 	float policyUpdateMagnitude = (policyBefore - policyAfter).norm().item<float>();
 	float criticUpdateMagnitude = (criticBefore - criticAfter).norm().item<float>();
@@ -377,15 +382,66 @@ void TorchLoadSaveSeq(torch::nn::Sequential seq, std::filesystem::path path, c10
 		try {
 			torch::load(seq, streamIn, device);
 		} catch (std::exception& e) {
-			RG_ERR_CLOSE(
-				"Failed to load model, checkpoint may be corrupt or of different model arch.\n" <<
-				"Exception: " << e.what()
-			);
+			throw std::runtime_error(std::string("TorchLoadSaveSeq: Failed to load model, checkpoint may be corrupt or of different model arch. Exception: ") + e.what());
+		}
+
+		auto sizesAfter = GetSeqSizes(seq);
+		if (!std::equal(sizesBefore.begin(), sizesBefore.end(), sizesAfter.begin(), sizesAfter.end())) {
+			std::stringstream stream;
+			stream << "TorchLoadSaveSeq: Saved model has different size than current model, cannot load model from " << path << ":\n";
+			
+			for (int i = 0; i < 2; i++) {
+				stream << " > " << (i ? "Saved model:   [ " : "Current model: [ ");
+				for (uint64_t size : (i ? sizesAfter : sizesBefore))
+					stream << size << ' ';
+
+				stream << " ]";
+				if (i == 0)
+					stream << ",\n";
+			}
+
+			throw std::runtime_error(stream.str());
+		}
+
+	} else {
+		auto streamOut = std::ofstream(path, std::ios::binary);
+		torch::save(seq, streamOut);
+	}
+}
+
+/**
+ * @brief Safely serializes or deserializes a polymorphic DiscretePolicy module.
+ *
+ * Safety Constraints:
+ * LibTorch will happily load a `.pt` model checkpoint of a completely different
+ * architecture or shape size into memory without throwing an error natively. This causes 
+ * catastrophic out-of-bounds segfaults during the first forward pass.
+ * To mitigate this, this function caches the parameter topological sizes before loading,
+ * and aggressively compares them post-load. If a shape mismatch is detected, it fails-fast
+ * and aborts rather than executing with a corrupted computational graph.
+ *
+ * @param policy Pointer to the instantiated DiscretePolicy module.
+ * @param path File system path to the model checkpoint.
+ * @param device Target tensor device (CPU/CUDA).
+ * @param load True to load from disk, false to save to disk.
+ * @throws std::runtime_error if shape mismatch occurs or the filesystem is inaccessible.
+ */
+void TorchLoadSaveModule(RLGPC::DiscretePolicy* policy, std::filesystem::path path, c10::Device device, bool load) {
+	if (load) {
+		if (!std::filesystem::exists(path))
+			RG_ERR_CLOSE("Failed to load from " << path << ", file does not exist or can't be accessed");
+
+		auto sizesBefore = policy->GetSizes();
+
+		try {
+			policy->Load(path, device);
+		} catch (std::exception& e) {
+			throw std::runtime_error(std::string("TorchLoadSaveModule: Failed to load model, checkpoint may be corrupt or of different model arch. Exception: ") + e.what());
 		}
 
 		// Torch will happily load in a model of a totally different size, then we will crash when we try to use it
 		// So we need to manually check if it is the same size
-		auto sizesAfter = GetSeqSizes(seq);
+		auto sizesAfter = policy->GetSizes();
 		if (!std::equal(sizesBefore.begin(), sizesBefore.end(), sizesAfter.begin(), sizesAfter.end())) {
 			std::stringstream stream;
 			stream << "Saved model has different size than current model, cannot load model from " << path << ":\n";
@@ -400,32 +456,44 @@ void TorchLoadSaveSeq(torch::nn::Sequential seq, std::filesystem::path path, c10
 					stream << ",\n";
 			}
 
-			RG_ERR_CLOSE(stream.str());
+			throw std::runtime_error(stream.str());
 		}
 
 	} else {
-		auto streamOut = std::ofstream(path, std::ios::binary);
-		torch::save(seq, streamOut);
+		policy->Save(path);
 	}
 }
 
+/**
+ * @brief Manages the safe disk serialization of all PPO components (Policy, ValueNet, Optimizers).
+ *
+ * Architectural Intent:
+ * Ensures atomic state recovery for the entire PPO pipeline. Handles synchronization 
+ * of Half-Precision (FP16) copies if configured, ensuring the mixed-precision 
+ * inference graph matches the newly loaded FP32 master weights.
+ *
+ * @param learner Pointer to the active PPO learner instance.
+ * @param folderPath Directory containing the training checkpoints.
+ * @param load True to load states, false to save states.
+ * @throws std::runtime_error on I/O failures or corrupted checkpoint topology.
+ */
 void TorchLoadSaveAll(RLGPC::PPOLearner* learner, std::filesystem::path folderPath, bool load) {
 
 	if (load) {
 		if (!std::filesystem::exists(folderPath / MODEL_FILE_NAMES[0]))
-			RG_ERR_CLOSE("PPOLearner: Failed to find file \"" << MODEL_FILE_NAMES[0] << "\" in " << folderPath << ".")
+			throw std::runtime_error("TorchLoadSaveAll: PPOLearner failed to find file \"" + std::string(MODEL_FILE_NAMES[0]) + "\" in " + folderPath.string() + ".");
 	}
 
-	TorchLoadSaveSeq(learner->policy->seq, folderPath / MODEL_FILE_NAMES[0], learner->device, load);
+	TorchLoadSaveModule(learner->policy.get(), folderPath / MODEL_FILE_NAMES[0], learner->device, load);
 
 	if (!load || std::filesystem::exists(folderPath / MODEL_FILE_NAMES[1]))
 		TorchLoadSaveSeq(learner->valueNet->seq, folderPath / MODEL_FILE_NAMES[1], learner->device, load);
 
 	if (load) {
 		if (learner->policyHalf)
-			_CopyModelParamsHalf(learner->policy, learner->policyHalf);
+			_CopyModelParamsHalf(learner->policy.get(), learner->policyHalf.get());
 		if (learner->valueNetHalf)
-			_CopyModelParamsHalf(learner->valueNet, learner->valueNetHalf);
+			_CopyModelParamsHalf(learner->valueNet.get(), learner->valueNetHalf.get());
 	}
 
 	// Load or save optimizers
@@ -457,10 +525,7 @@ void TorchLoadSaveAll(RLGPC::PPOLearner* learner, std::filesystem::path folderPa
 			}
 
 		} catch (std::exception& e) {
-			RG_ERR_CLOSE(
-				"Failed to load optimizers, exception: " << e.what() << "\n" <<
-				"Checkpoint may be corrupt."
-			);
+			throw std::runtime_error(std::string("TorchLoadSaveAll: Failed to load optimizers, exception: ") + e.what() + "\nCheckpoint may be corrupt.");
 		}
 	} else {
 		for (int i = 0; i < 2; i++) {
@@ -481,8 +546,8 @@ RLGPC::DiscretePolicy* RLGPC::PPOLearner::LoadAdditionalPolicy(std::filesystem::
 	if (!std::filesystem::exists(policyPath))
 		return NULL;
 
-	RLGPC::DiscretePolicy* newPolicy = new RLGPC::DiscretePolicy(policy->inputAmount, policy->actionAmount, policy->layerSizes, policy->device);
-	TorchLoadSaveSeq(newPolicy->seq, policyPath, newPolicy->device, true);
+	RLGPC::DiscretePolicy* newPolicy = policy->Clone();
+	TorchLoadSaveModule(newPolicy, policyPath, newPolicy->device, true);
 	return newPolicy;
 }
 

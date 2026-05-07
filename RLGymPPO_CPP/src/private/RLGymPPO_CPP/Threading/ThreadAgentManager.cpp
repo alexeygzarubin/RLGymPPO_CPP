@@ -67,12 +67,12 @@ RLGPC::GameTrajectory RLGPC::ThreadAgentManager::CollectTimesteps(uint64_t amoun
 
 		result.MultiAppend(trajs);
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("Exception concatenating timesteps: " << e.what());
+		throw std::runtime_error(std::string("ThreadAgentManager::CollectTimesteps: Exception concatenating timesteps: ") + e.what());
 	}
 
 	// Being extra paranoid in case something goes wrong
 	if (result.size != totalTimesteps)
-		RG_ERR_CLOSE("ThreadAgentManager::CollectTimesteps(): Agent timestep concatenation failed (" << result.size << " != " << totalTimesteps << ")");
+		throw std::runtime_error("ThreadAgentManager::CollectTimesteps: Agent timestep concatenation failed (" + std::to_string(result.size) + " != " + std::to_string(totalTimesteps) + ")");
 
 	lastIterationTime = iterationTimer.Elapsed();
 	iterationTimer.Reset();

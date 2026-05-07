@@ -6,6 +6,7 @@
 #include <RLGymPPO_CPP/PPO/PPOLearner.h>
 #include <RLGymPPO_CPP/PPO/ExperienceBuffer.h>
 #include <RLGymPPO_CPP/Threading/ThreadAgentManager.h>
+#include <RLGymPPO_CPP/TransformerPolicy.h>
 
 #include <torch/cuda.h>
 #include "../libsrc/json/nlohmann/json.hpp"
@@ -125,17 +126,29 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	expBuffer = std::make_unique<ExperienceBuffer>(config.expBufferSize, config.randomSeed, inferDevice);
 
 	RG_LOG("\tCreating PPO Learner...");
+	config.ppo.policy_type = config.policy_type;
+	config.ppo.max_entities = config.max_entities;
+	config.ppo.q_features = config.q_features;
+	config.ppo.kv_features = config.kv_features;
 	ppo = std::make_unique<PPOLearner>(obsSize, actionAmount, config.ppo, device);
 
 	RG_LOG("\tCreating agent manager...");
-	DiscretePolicy* agentPolicy = ppo->policy;
-	DiscretePolicy* agentPolicyHalf = ppo->policyHalf;
+	DiscretePolicy* agentPolicy = ppo->policy.get();
+	DiscretePolicy* agentPolicyHalf = ppo->policyHalf.get();
 
 	if (inferDevice != device) {
-		policyInfer = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+		if (config.policy_type == "EARL") {
+			policyInfer = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, inferDevice);
+		} else {
+			policyInfer = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+		}
 		agentPolicy = policyInfer.get();
 		if (ppo->policyHalf) {
-			policyInferHalf = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+			if (config.policy_type == "EARL") {
+				policyInferHalf = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, inferDevice);
+			} else {
+				policyInferHalf = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
+			}
 			agentPolicyHalf = policyInferHalf.get();
 		}
 	}
@@ -463,6 +476,18 @@ void DisplayReport(const RLGPC::Report& report) {
 	}
 }
 
+/**
+ * @brief Thread-safe synchronization of network weights between modules.
+ *
+ * Architectural Intent:
+ * Required for synchronizing the active Learner model (which receives gradients) with the
+ * ThreadAgents (which perform CPU/GPU rollouts). Uses `RG_NOGRAD` to ensure parameter 
+ * copies do not build a computation graph in LibTorch, which would leak memory.
+ * 
+ * @param from Source module to copy parameters from.
+ * @param to Target module to overwrite.
+ * @throws std::runtime_error on misaligned parameter topology.
+ */
 static void _CopyModelParams(torch::nn::Module* from, torch::nn::Module* to) {
 	RG_NOGRAD;
 	try {
@@ -473,7 +498,7 @@ static void _CopyModelParams(torch::nn::Module* from, torch::nn::Module* to) {
 			toParams[i].copy_(scaledParams, true);
 		}
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("_CopyModelParams() exception: " << e.what());
+		throw std::runtime_error(std::string("Learner::_CopyModelParams exception: ") + e.what());
 	}
 }
 
@@ -481,9 +506,9 @@ void RLGPC::Learner::Learn() {
 	RG_LOG("Learner::Learn():");
 
 	if (policyInfer) {
-		_CopyModelParams(ppo->policy, policyInfer.get());
+		_CopyModelParams(ppo->policy.get(), policyInfer.get());
 		if (policyInferHalf && ppo->policyHalf) {
-			_CopyModelParams(ppo->policyHalf, policyInferHalf.get());
+			_CopyModelParams(ppo->policyHalf.get(), policyInferHalf.get());
 		}
 	}
 
@@ -528,7 +553,7 @@ void RLGPC::Learner::Learn() {
 		try {
 			AddNewExperience(timesteps, report);
 		} catch (std::exception& e) {
-			RG_ERR_CLOSE("Exception during Learner::AddNewExperience(): " << e.what());
+			throw std::runtime_error(std::string("Learner::Learn: Exception during Learner::AddNewExperience(): ") + e.what());
 		}
 
 		Timer ppoLearnTimer = {};
@@ -554,7 +579,7 @@ void RLGPC::Learner::Learn() {
 			try {
 				ppo->Learn(expBuffer.get(), report);
 			} catch (std::exception& e) {
-				RG_ERR_CLOSE("Exception during PPOLearner::Learn(): " << e.what());
+				throw std::runtime_error(std::string("Learner::Learn: Exception during PPOLearner::Learn(): ") + e.what());
 			}
 
 			if (blockAgentInferDuringLearn)
@@ -563,9 +588,9 @@ void RLGPC::Learner::Learn() {
 			totalEpochs += config.ppo.epochs;
 
 			if (policyInfer) {
-				_CopyModelParams(ppo->policy, policyInfer.get());
+				_CopyModelParams(ppo->policy.get(), policyInfer.get());
 				if (policyInferHalf && ppo->policyHalf) {
-					_CopyModelParams(ppo->policyHalf, policyInferHalf.get());
+					_CopyModelParams(ppo->policyHalf.get(), policyInferHalf.get());
 				}
 			}
 		}
@@ -588,7 +613,7 @@ void RLGPC::Learner::Learn() {
 			if (config.skillTrackerConfig.stepCallback == NULL)
 				skillTracker->config.stepCallback = stepCallback;
 
-			skillTracker->RunGames(ppo->policy, timestepsCollected);
+			skillTracker->RunGames(ppo->policy.get(), timestepsCollected);
 			for (auto& pair : skillTracker->curRating.data) {
 				std::string metricName = RS_STR("Skill Rating" << (pair.first.empty() ? "" : " ") << pair.first);
 				report[metricName] = pair.second;

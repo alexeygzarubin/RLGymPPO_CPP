@@ -115,17 +115,22 @@ void RunThread(
 			auto blueObs = FLIST2_TO_TENSOR(teamObsSets[0]).to(bluePolicy->device);
 			auto orangeObs = FLIST2_TO_TENSOR(teamObsSets[1]).to(orangePolicy->device);
 
-			auto blueActions = TENSOR_TO_ILIST(bluePolicy->GetAction(blueObs, 1).action);
-			auto orangeActions = TENSOR_TO_ILIST(orangePolicy->GetAction(orangeObs, 1).action);
+			auto blueActions = TENSOR_TO_ILIST(bluePolicy->GetAction(blueObs, 1).action.flatten());
+			auto orangeActions = TENSOR_TO_ILIST(orangePolicy->GetAction(orangeObs, 1).action.flatten());
 
+			int actAmt = bluePolicy->actionAmount;
 			IList allActions = {};
 			for (int j = 0, blueIdx = 0, orangeIdx = 0; j < gameInst->match->playerAmount; j++) {
 				Team playerTeam = gameInst->gym->prevState.players[j].team;
 				if (playerTeam == Team::BLUE) {
-					allActions.push_back(blueActions[blueIdx]);
+					for (int a = 0; a < actAmt; ++a) {
+						allActions.push_back(blueActions[blueIdx * actAmt + a]);
+					}
 					blueIdx++;
 				} else {
-					allActions.push_back(orangeActions[orangeIdx]);
+					for (int a = 0; a < actAmt; ++a) {
+						allActions.push_back(orangeActions[orangeIdx * actAmt + a]);
+					}
 					orangeIdx++;
 				}
 			}
@@ -173,7 +178,7 @@ void RLGPC::SkillTracker::RunGames(DiscretePolicy* curPolicy, int64_t timestepsD
 	}
 
 	if (oldPolicies.empty() && config.startWithVersion) {
-		DiscretePolicy* newOldPolicy = new DiscretePolicy(curPolicy->inputAmount, curPolicy->actionAmount, curPolicy->layerSizes, curPolicy->device);
+		DiscretePolicy* newOldPolicy = curPolicy->Clone();
 		curPolicy->CopyTo(*newOldPolicy);
 		oldPolicies.push_back(newOldPolicy);
 		oldRatings.push_back(curRating);
@@ -243,7 +248,7 @@ void RLGPC::SkillTracker::RunGames(DiscretePolicy* curPolicy, int64_t timestepsD
 		timestepsSinceVersionMade = 0;
 
 		// Add current policy as previous version
-		DiscretePolicy* newOldPolicy = new DiscretePolicy(curPolicy->inputAmount, curPolicy->actionAmount, curPolicy->layerSizes, curPolicy->device);
+		DiscretePolicy* newOldPolicy = curPolicy->Clone();
 		curPolicy->CopyTo(*newOldPolicy);
 		oldPolicies.push_back(newOldPolicy);
 		oldRatings.push_back(curRating);

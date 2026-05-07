@@ -17,6 +17,11 @@ namespace RLGPC {
 		int numGamesPerThread = 16;
 		int minInferenceSize = 80;
 
+		std::string policy_type = "MLP";
+		int max_entities = 41;
+		int q_features = 24;
+		int kv_features = 32;
+
 		bool renderMode = false;
 		// If renderMode, this is the scaling of time for the game
 		// 1.0 = Run the game at real time

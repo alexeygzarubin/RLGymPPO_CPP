@@ -13,7 +13,7 @@ RLGPC::RenderSender::RenderSender() {
 		RG_LOG("Current dir: " << std::filesystem::current_path());
 		pyMod = py::module::import("python_scripts.render_receiver");
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("RenderSender: Failed to import render receiver, exception: " << e.what());
+		throw std::runtime_error(std::string("RenderSender: Failed to import render receiver, exception: ") + e.what());
 	}
 
 	RG_LOG(" > RenderSender initalized.");
@@ -92,7 +92,7 @@ void RLGPC::RenderSender::Send(const GameState& state, const ActionSet& actions)
 		py::gil_scoped_acquire acquire;
 		pyMod.attr("render_state")(jStr);
 	} catch (std::exception& e) {
-		RG_ERR_CLOSE("RenderSender: Failed to send gamestate, exception: " << e.what());
+		throw std::runtime_error(std::string("RenderSender: Failed to send gamestate, exception: ") + e.what());
 	}
 }
 

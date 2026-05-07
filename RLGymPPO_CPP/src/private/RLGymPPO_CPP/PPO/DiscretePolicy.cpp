@@ -3,6 +3,8 @@
 #include <torch/nn/modules/linear.h>
 #include <torch/nn/modules/activation.h>
 #include <private/RLGymPPO_CPP/FrameworkTorch.h>
+#include <torch/csrc/api/include/torch/serialize.h>
+#include <fstream>
 
 RLGPC::DiscretePolicy::DiscretePolicy(int inputAmount, int actionAmount, const IList& layerSizes, torch::Device device, float temperature) :
 	device(device), inputAmount(inputAmount), actionAmount(actionAmount), layerSizes(layerSizes), temperature(temperature) {
@@ -26,6 +28,30 @@ RLGPC::DiscretePolicy::DiscretePolicy(int inputAmount, int actionAmount, const I
 	register_module("seq", seq);
 
 	this->to(device, true);
+}
+
+RLGPC::DiscretePolicy* RLGPC::DiscretePolicy::Clone() const {
+	return new DiscretePolicy(inputAmount, actionAmount, layerSizes, device, temperature);
+}
+
+std::vector<uint64_t> RLGPC::DiscretePolicy::GetSizes() const {
+	std::vector<uint64_t> result = {};
+	for (auto param : this->parameters())
+		result.push_back(param.numel());
+	return result;
+}
+
+void RLGPC::DiscretePolicy::Save(std::filesystem::path path) const {
+	auto streamOut = std::ofstream(path, std::ios::binary);
+	torch::save(seq, streamOut);
+}
+
+void RLGPC::DiscretePolicy::Load(std::filesystem::path path, torch::Device device) {
+	auto streamIn = std::ifstream(path, std::ios::binary);
+	streamIn >> std::noskipws;
+	if (!streamIn.good())
+		throw std::runtime_error("File does not exist or can't be accessed.");
+	torch::load(seq, streamIn, device);
 }
 
 void RLGPC::DiscretePolicy::CopyTo(DiscretePolicy& to) {
