@@ -196,6 +196,14 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	globalGilRelease = new pybind11::gil_scoped_release();
 }
 
+RLGPC::DiscretePolicy* RLGPC::Learner::GetTrainingPolicy() {
+	return ppo ? ppo->policy.get() : nullptr;
+}
+
+torch::nn::Module* RLGPC::Learner::GetTrainingPolicyModule() {
+	return ppo ? static_cast<torch::nn::Module*>(ppo->policy.get()) : nullptr;
+}
+
 template <typename T>
 nlohmann::json MakeJSONArray(const std::vector<T> list) {
 	auto result = nlohmann::json::array();

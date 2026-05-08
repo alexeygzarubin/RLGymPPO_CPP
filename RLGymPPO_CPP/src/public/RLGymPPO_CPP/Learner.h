@@ -7,6 +7,12 @@
 #include "LearnerConfig.h"
 #include <memory>
 
+namespace torch {
+    namespace nn {
+        class Module;
+    }
+}
+
 namespace RLGPC {
 
 	typedef std::function<void(class Learner*, Report&)> IterationCallback;
@@ -24,6 +30,8 @@ namespace RLGPC {
 		std::unique_ptr<RenderSender> renderSender;
 		std::unique_ptr<class DiscretePolicy> policyInfer;
 		std::unique_ptr<class DiscretePolicy> policyInferHalf;
+		class DiscretePolicy* GetTrainingPolicy();
+		torch::nn::Module* GetTrainingPolicyModule();
 		void* globalGilRelease = NULL;
 
 		std::unique_ptr<struct SkillTracker> skillTracker;
