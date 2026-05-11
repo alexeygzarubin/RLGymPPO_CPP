@@ -4,6 +4,7 @@
 #include <RLGymPPO_CPP/PPO/ValueEstimator.h>
 #include <RLGymPPO_CPP/FrameworkTorch.h>
 #include <torch/csrc/api/include/torch/serialize.h>
+#include <RLGymPPO_CPP/TransformerPolicy.h>
 
 using namespace RLGSC;
 using namespace RLGPC;
@@ -27,27 +28,50 @@ using namespace RLGPC;
  * @param gpu Whether to force evaluation onto the GPU device.
  * @throws std::runtime_error if checkpoint deserialization fails.
  */
+RLGPC::InferUnit::~InferUnit() = default;
+
 RLGPC::InferUnit::InferUnit(
 	OBSBuilder* obsBuilder, ActionParser* actionParser, 
-	std::filesystem::path modelPath, bool isPolicy, int obsSize, const IList& layerSizes, bool gpu)
+	std::filesystem::path modelPath, bool isPolicy, int obsSize, const IList& layerSizes, bool gpu,
+	std::string policy_type, int max_entities, int q_features, int kv_features, std::vector<int64_t> action_splits)
 	: obsBuilder(obsBuilder), actionParser(actionParser) {
 
 	RG_LOG("InferUnit():");
 
+	if (!obsBuilder) throw std::invalid_argument("InferUnit::InferUnit: obsBuilder cannot be null.");
+	if (!actionParser) throw std::invalid_argument("InferUnit::InferUnit: actionParser cannot be null.");
+
 	RG_LOG(" > Creating policy/critic...");
 	torch::Device device = gpu ? torch::kCUDA : torch::kCPU;
 
+	if (policy_type == "EARL") {
+		if (max_entities == 0 || q_features == 0 || kv_features == 0 || action_splits.empty()) {
+			throw std::invalid_argument("InferUnit::InferUnit: policy_type is EARL but dimensions/splits are 0 or empty!");
+		}
+	}
+
 	if (isPolicy) {
-		policy = new DiscretePolicy(obsSize, actionParser->GetActionAmount(), layerSizes, device);
-		critic = NULL;
+		if (policy_type == "EARL") {
+			policy.reset(new TransformerPolicy(1, max_entities, q_features, kv_features, action_splits, device));
+		} else {
+			policy.reset(new DiscretePolicy(obsSize, actionParser->GetActionAmount(), layerSizes, device));
+		}
+		critic = nullptr;
 	} else {
-		policy = NULL;
-		critic = new ValueEstimator(obsSize, layerSizes, device);
+		policy = nullptr;
+		if (policy_type == "EARL") {
+			critic.reset(new TransformerValueEstimator(1, max_entities, q_features, kv_features, device));
+		} else {
+			critic.reset(new ValueEstimator(obsSize, layerSizes, device));
+		}
 	}
 	RG_LOG(" > Loading policy/critic...");
 	try {
-		auto streamIn = std::ifstream(modelPath, std::ios::binary);
-		torch::load(policy ? policy->seq : critic->seq, streamIn, device);
+		if (isPolicy) {
+			policy->Load(modelPath, device);
+		} else {
+			critic->Load(modelPath, device);
+		}
 	} catch (std::exception& e) {
 		throw std::runtime_error(std::string("InferUnit::InferUnit: Failed to load model, checkpoint may be corrupt or of different model arch. Exception: ") + e.what());
 	}
@@ -76,6 +100,8 @@ ActionSet RLGPC::InferUnit::InferPolicyAll(
 
 	ASSERT_RIGHT_TYPE(policy, critic);
 
+	std::lock_guard<std::mutex> lock(infer_mutex);
+
 	FList2 obsSet = GetObs(state, prevActions);
 	
 	RG_NOGRAD;
@@ -92,6 +118,8 @@ Action RLGPC::InferUnit::InferPolicySingle(
 	bool deterministic, float temperature
 ) {
 	ASSERT_RIGHT_TYPE(policy, critic);
+
+	std::lock_guard<std::mutex> lock(infer_mutex);
 
 	FList obs = GetObs(player, state, prevAction);
 
@@ -123,6 +151,8 @@ RLGSC::FList RLGPC::InferUnit::InferPolicySingleDistrib(
 ) {
 	ASSERT_RIGHT_TYPE(policy, critic);
 
+	std::lock_guard<std::mutex> lock(infer_mutex);
+
 	FList obs = GetObs(player, state, prevAction);
 
 	RG_NOGRAD;
@@ -134,6 +164,8 @@ RLGSC::FList RLGPC::InferUnit::InferPolicySingleDistrib(
 RLGSC::FList RLGPC::InferUnit::InferCriticAll(const RLGSC::GameState& state, const RLGSC::ActionSet& prevActions) {
 	ASSERT_RIGHT_TYPE(critic, policy);
 
+	std::lock_guard<std::mutex> lock(infer_mutex);
+
 	FList2 obsSet = GetObs(state, prevActions);
 
 	RG_NOGRAD;
@@ -143,6 +175,8 @@ RLGSC::FList RLGPC::InferUnit::InferCriticAll(const RLGSC::GameState& state, con
 
 float RLGPC::InferUnit::InferCriticSingle(const RLGSC::PlayerData& player, const RLGSC::GameState& state, const RLGSC::Action& prevAction) {
 	ASSERT_RIGHT_TYPE(critic, policy);
+
+	std::lock_guard<std::mutex> lock(infer_mutex);
 
 	FList obs = GetObs(player, state, prevAction);
 

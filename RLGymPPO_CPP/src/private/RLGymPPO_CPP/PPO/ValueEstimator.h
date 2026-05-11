@@ -10,10 +10,14 @@ namespace RLGPC {
 		torch::Device device;
 		torch::nn::Sequential seq;
 
-		ValueEstimator(int inputAmount, const IList& layerSizes, torch::Device device);
+		ValueEstimator(int inputAmount, const IList& layerSizes, torch::Device device, bool build_network = true);
+		virtual ~ValueEstimator() = default;
 
-		torch::Tensor Forward(torch::Tensor input) {
+		virtual torch::Tensor Forward(torch::Tensor input) {
 			return seq->forward(input).to(device, true);
 		}
+		virtual void Load(std::filesystem::path path, torch::Device device);
+		virtual void Save(std::filesystem::path path) const;
+		virtual std::vector<uint64_t> GetSizes();
 	};
 }

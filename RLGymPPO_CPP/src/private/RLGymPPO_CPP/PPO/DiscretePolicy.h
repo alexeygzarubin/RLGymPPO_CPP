@@ -21,7 +21,7 @@ namespace RLGPC {
 		// Min probability that an action will be taken
 		constexpr static float ACTION_MIN_PROB = 1e-11;
 
-		DiscretePolicy(int inputAmount, int actionAmount, const IList& layerSizes, torch::Device device, float temperature = 1);
+		DiscretePolicy(int inputAmount, int actionAmount, const IList& layerSizes, torch::Device device, float temperature = 1, bool build_network = true);
 
 		RG_NO_COPY(DiscretePolicy);
 

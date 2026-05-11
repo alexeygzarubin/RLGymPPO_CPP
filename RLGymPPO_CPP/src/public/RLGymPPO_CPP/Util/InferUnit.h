@@ -3,18 +3,25 @@
 #include "../Threading/GameInst.h"
 #include "../LearnerConfig.h"
 
+#include <memory>
+#include <mutex>
+
 namespace RLGPC {
 	class RG_IMEXPORT InferUnit {
 	public:
 
 		RLGSC::OBSBuilder* obsBuilder;
 		RLGSC::ActionParser* actionParser;
-		class DiscretePolicy* policy;
-		class ValueEstimator* critic;
+		std::unique_ptr<class DiscretePolicy> policy;
+		std::unique_ptr<class ValueEstimator> critic;
+		std::mutex infer_mutex;
+
+		~InferUnit();
 
 		InferUnit(
 			RLGSC::OBSBuilder* obsBuilder, RLGSC::ActionParser* actionParser, 
-			std::filesystem::path modelPath, bool isPolicy, int obsSize, const RLGPC::IList& layerSizes, bool gpu = false);
+			std::filesystem::path modelPath, bool isPolicy, int obsSize, const RLGPC::IList& layerSizes, bool gpu = false,
+			std::string policy_type = "MLP", int max_entities = 0, int q_features = 0, int kv_features = 0, std::vector<int64_t> action_splits = {});
 
 		RLGSC::FList GetObs(const RLGSC::PlayerData& player, const RLGSC::GameState& state, const RLGSC::Action& prevAction);
 		RLGSC::FList2 GetObs(const RLGSC::GameState& state, const RLGSC::ActionSet& prevActions);

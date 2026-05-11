@@ -37,15 +37,20 @@ RLGPC::PPOLearner::PPOLearner(int obsSpaceSize, int actSpaceSize, PPOLearnerConf
 		RG_ERR_CLOSE("PPOLearner: config.batchSize must be a multiple of config.miniBatchSize");
 
 	if (config.policy_type == "EARL") {
-		policy = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, device, config.policyTemperature);
+		policy = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, config.action_splits, device, config.policyTemperature);
+		valueNet = std::make_unique<TransformerValueEstimator>(1, config.max_entities, config.q_features, config.kv_features, device);
 	} else {
 		policy = std::make_unique<DiscretePolicy>(obsSpaceSize, actSpaceSize, config.policyLayerSizes, device, config.policyTemperature);
+		valueNet = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
 	}
-	valueNet = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
 
 	if (config.halfPrecModels) {
 		policyHalf = std::unique_ptr<DiscretePolicy>(policy->Clone());
-		valueNetHalf = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
+		if (config.policy_type == "EARL") {
+			valueNetHalf = std::make_unique<TransformerValueEstimator>(1, config.max_entities, config.q_features, config.kv_features, device);
+		} else {
+			valueNetHalf = std::make_unique<ValueEstimator>(obsSpaceSize, config.criticLayerSizes, device);
+		}
 
 		_CopyModelParamsHalf(policy.get(), policyHalf.get());
 		_CopyModelParamsHalf(valueNet.get(), valueNetHalf.get());
@@ -56,8 +61,14 @@ RLGPC::PPOLearner::PPOLearner(int obsSpaceSize, int actSpaceSize, PPOLearnerConf
 		policyHalf = nullptr;
 		valueNetHalf = nullptr;
 	}
-	policyOptimizer = std::make_unique<optim::Adam>(policy->parameters(), optim::AdamOptions(config.policyLR));
-	valueOptimizer = std::make_unique<optim::Adam>(valueNet->parameters(), optim::AdamOptions(config.criticLR));
+
+	if (config.policy_type == "EARL") {
+		policyOptimizer = std::make_unique<optim::AdamW>(policy->parameters(), optim::AdamWOptions(config.policyLR).weight_decay(config.weightDecay));
+		valueOptimizer = std::make_unique<optim::AdamW>(valueNet->parameters(), optim::AdamWOptions(config.criticLR).weight_decay(config.weightDecay));
+	} else {
+		policyOptimizer = std::make_unique<optim::Adam>(policy->parameters(), optim::AdamOptions(config.policyLR));
+		valueOptimizer = std::make_unique<optim::Adam>(valueNet->parameters(), optim::AdamOptions(config.criticLR));
+	}
 	valueLossFn = nn::MSELoss();
 
 	if (config.measureGradientNoise) {
@@ -464,6 +475,42 @@ void TorchLoadSaveModule(RLGPC::DiscretePolicy* policy, std::filesystem::path pa
 	}
 }
 
+void TorchLoadSaveValueEstimator(RLGPC::ValueEstimator* valueNet, std::filesystem::path path, c10::Device device, bool load) {
+	if (load) {
+		if (!std::filesystem::exists(path))
+			RG_ERR_CLOSE("Failed to load from " << path << ", file does not exist or can't be accessed");
+
+		auto sizesBefore = valueNet->GetSizes();
+
+		try {
+			valueNet->Load(path, device);
+		} catch (std::exception& e) {
+			throw std::runtime_error(std::string("TorchLoadSaveValueEstimator: Failed to load model, checkpoint may be corrupt or of different model arch. Exception: ") + e.what());
+		}
+
+		auto sizesAfter = valueNet->GetSizes();
+		if (!std::equal(sizesBefore.begin(), sizesBefore.end(), sizesAfter.begin(), sizesAfter.end())) {
+			std::stringstream stream;
+			stream << "Saved value estimator has different size than current model, cannot load model from " << path << ":\n";
+			
+			for (int i = 0; i < 2; i++) {
+				stream << " > " << (i ? "Saved model:   [ " : "Current model: [ ");
+				for (uint64_t size : (i ? sizesAfter : sizesBefore))
+					stream << size << ' ';
+
+				stream << " ]";
+				if (i == 0)
+					stream << ",\n";
+			}
+
+			throw std::runtime_error(stream.str());
+		}
+
+	} else {
+		valueNet->Save(path);
+	}
+}
+
 /**
  * @brief Manages the safe disk serialization of all PPO components (Policy, ValueNet, Optimizers).
  *
@@ -480,14 +527,14 @@ void TorchLoadSaveModule(RLGPC::DiscretePolicy* policy, std::filesystem::path pa
 void TorchLoadSaveAll(RLGPC::PPOLearner* learner, std::filesystem::path folderPath, bool load) {
 
 	if (load) {
-		if (!std::filesystem::exists(folderPath / MODEL_FILE_NAMES[0]))
-			throw std::runtime_error("TorchLoadSaveAll: PPOLearner failed to find file \"" + std::string(MODEL_FILE_NAMES[0]) + "\" in " + folderPath.string() + ".");
+		for (int i = 0; i < 2; i++) {
+			if (!std::filesystem::exists(folderPath / MODEL_FILE_NAMES[i]))
+				throw std::runtime_error("TorchLoadSaveAll: PPOLearner failed to find required model file \"" + std::string(MODEL_FILE_NAMES[i]) + "\" in " + folderPath.string() + ".");
+		}
 	}
 
 	TorchLoadSaveModule(learner->policy.get(), folderPath / MODEL_FILE_NAMES[0], learner->device, load);
-
-	if (!load || std::filesystem::exists(folderPath / MODEL_FILE_NAMES[1]))
-		TorchLoadSaveSeq(learner->valueNet->seq, folderPath / MODEL_FILE_NAMES[1], learner->device, load);
+	TorchLoadSaveValueEstimator(learner->valueNet.get(), folderPath / MODEL_FILE_NAMES[1], learner->device, load);
 
 	if (load) {
 		if (learner->policyHalf)
@@ -503,15 +550,13 @@ void TorchLoadSaveAll(RLGPC::PPOLearner* learner, std::filesystem::path folderPa
 				auto path = folderPath / OPTIM_FILE_NAMES[i];
 
 				if (!std::filesystem::exists(path)) {
-					RG_LOG("WARNING: No optimizer found at " << path << ", optimizer will be reset");
-					continue;
+					throw std::runtime_error("TorchLoadSaveAll: Missing required optimizer file at " + path.string());
 				}
 
 				{ // Check if empty
 					std::ifstream testStream = std::ifstream(path, std::istream::ate | std::ios::binary);
 					if (testStream.tellg() == 0) {
-						RG_LOG("WARNING: Saved optimizer is empty, optimizer will be reset");
-						continue;
+						throw std::runtime_error("TorchLoadSaveAll: Saved optimizer file is completely empty (0 bytes) at " + path.string());
 					}
 				}
 
@@ -569,11 +614,19 @@ void RLGPC::PPOLearner::UpdateLearningRates(float policyLR, float criticLR) {
 	config.policyLR = policyLR;
 	config.criticLR = criticLR;
 
-	for (auto& g : policyOptimizer->param_groups())
-		static_cast<torch::optim::AdamOptions&>(g.options()).lr(policyLR);
+	if (config.policy_type == "EARL") {
+		for (auto& g : policyOptimizer->param_groups())
+			static_cast<torch::optim::AdamWOptions&>(g.options()).lr(policyLR);
 
-	for (auto& g : valueOptimizer->param_groups())
-		static_cast<torch::optim::AdamOptions&>(g.options()).lr(criticLR);
+		for (auto& g : valueOptimizer->param_groups())
+			static_cast<torch::optim::AdamWOptions&>(g.options()).lr(criticLR);
+	} else {
+		for (auto& g : policyOptimizer->param_groups())
+			static_cast<torch::optim::AdamOptions&>(g.options()).lr(policyLR);
+
+		for (auto& g : valueOptimizer->param_groups())
+			static_cast<torch::optim::AdamOptions&>(g.options()).lr(criticLR);
+	}
 
 	std::stringstream updatedMsg;
 	updatedMsg << std::scientific << "Updated learning rate to [" << policyLR << ", " << criticLR << "]";

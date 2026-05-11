@@ -10,12 +10,14 @@ namespace RLGPC {
 		int max_entities = 41;
 		int q_features = 24;
 		int kv_features = 32;
+		std::vector<int64_t> action_splits = {3, 3, 3, 3, 3, 2, 2, 2};
 		int64_t batchSize = 50 * 1000;
 		int epochs = 10;
 		float policyLR = 3e-4f; // Policy learning rate
 		float criticLR = 3e-4f; // Critic learning rate
 		float entCoef = 0.005f; // Entropy coefficient
 		float clipRange = 0.2f;
+		float weightDecay = 0.01f; // Weight decay for AdamW optimizer (used with EARL)
 		int64_t miniBatchSize = 0; // Set to 0 to just use batchSize
 
 		// Experimental, improves PPO learn speed

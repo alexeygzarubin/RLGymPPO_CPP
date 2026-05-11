@@ -21,6 +21,7 @@ namespace RLGPC {
 		int max_entities = 41;
 		int q_features = 24;
 		int kv_features = 32;
+		std::vector<int64_t> action_splits = {3, 3, 3, 3, 3, 2, 2, 2};
 
 		bool renderMode = false;
 		// If renderMode, this is the scaling of time for the game

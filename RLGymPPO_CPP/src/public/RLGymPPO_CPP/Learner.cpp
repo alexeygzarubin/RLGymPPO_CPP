@@ -130,6 +130,7 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 	config.ppo.max_entities = config.max_entities;
 	config.ppo.q_features = config.q_features;
 	config.ppo.kv_features = config.kv_features;
+	config.ppo.action_splits = config.action_splits;
 	ppo = std::make_unique<PPOLearner>(obsSize, actionAmount, config.ppo, device);
 
 	RG_LOG("\tCreating agent manager...");
@@ -138,14 +139,14 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 
 	if (inferDevice != device) {
 		if (config.policy_type == "EARL") {
-			policyInfer = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, inferDevice);
+			policyInfer = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, config.action_splits, inferDevice);
 		} else {
 			policyInfer = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
 		}
 		agentPolicy = policyInfer.get();
 		if (ppo->policyHalf) {
 			if (config.policy_type == "EARL") {
-				policyInferHalf = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, std::vector<int64_t>{3, 3, 3, 3, 3, 2, 2, 2}, inferDevice);
+				policyInferHalf = std::make_unique<TransformerPolicy>(1, config.max_entities, config.q_features, config.kv_features, config.action_splits, inferDevice);
 			} else {
 				policyInferHalf = std::make_unique<DiscretePolicy>(obsSize, actionAmount, config.ppo.policyLayerSizes, inferDevice);
 			}

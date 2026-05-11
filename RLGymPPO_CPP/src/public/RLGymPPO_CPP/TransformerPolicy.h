@@ -3,7 +3,22 @@
 #include <RLGymPPO_CPP/EARLPerceiver.h>
 #include <RLGymPPO_CPP/ControlsPredictorDiscrete.h>
 
+#include <RLGymPPO_CPP/PPO/ValueEstimator.h>
+
 namespace RLGPC {
+
+/**
+ * @brief Utility for parsing flattened 1D observations into 3D tensors for the Perceiver.
+ */
+struct RG_IMEXPORT EARLObservationParser {
+    struct ParsedObs {
+        torch::Tensor q;
+        torch::Tensor kv;
+        torch::Tensor mask;
+    };
+
+    static ParsedObs Unflatten(torch::Tensor input, int num_q, int num_entities, int query_features, int kv_features);
+};
 
 /**
  * @brief A LibTorch module wrapping the EARLPerceiver Transformer for RL policy inference.
@@ -53,6 +68,33 @@ public:
     BackpropResult GetBackpropData(torch::Tensor obs, torch::Tensor acts) override;
 
     ~TransformerPolicy() override = default;
+};
+
+} // namespace RLGPC
+
+namespace RLGPC {
+
+/**
+ * @brief A LibTorch module wrapping the EARLPerceiver Transformer for RL value estimation.
+ */
+class RG_IMEXPORT TransformerValueEstimator : public ValueEstimator {
+public:
+    EARLPerceiver perceiver_{nullptr};
+    torch::nn::Sequential head_{nullptr};
+
+    int num_q_;
+    int num_entities_;
+    int query_features_;
+    int kv_features_;
+
+    TransformerValueEstimator(
+        int num_q, int num_entities, int query_features, int kv_features,
+        torch::Device device);
+
+    torch::Tensor Forward(torch::Tensor input) override;
+    void Load(std::filesystem::path path, torch::Device device) override;
+    void Save(std::filesystem::path path) const override;
+    std::vector<uint64_t> GetSizes() override;
 };
 
 } // namespace RLGPC

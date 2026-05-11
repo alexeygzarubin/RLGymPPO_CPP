@@ -1,12 +1,13 @@
 #pragma once
-#include "DiscretePolicy.h";
-#include "ValueEstimator.h";
-#include "ExperienceBuffer.h";
+#include "DiscretePolicy.h"
+#include "ValueEstimator.h"
+#include "ExperienceBuffer.h"
 #include <RLGymPPO_CPP/Util/Report.h>
 #include <RLGymPPO_CPP/Util/Timer.h>
 #include <RLGymPPO_CPP/PPO/PPOLearnerConfig.h>
 
 #include <torch/optim/adam.h>
+#include <torch/optim/adamw.h>
 #include <torch/nn/modules/loss.h>
 #include "../Util/gradscaler.hpp"
 #include "../Util/GradNoiseTracker.h"
@@ -19,7 +20,7 @@ namespace RLGPC {
 	public:
 		std::unique_ptr<DiscretePolicy> policy, policyHalf;
 		std::unique_ptr<ValueEstimator> valueNet, valueNetHalf;
-		std::unique_ptr<torch::optim::Adam> policyOptimizer, valueOptimizer;
+		std::unique_ptr<torch::optim::Optimizer> policyOptimizer, valueOptimizer;
 		torch::nn::MSELoss valueLossFn;
 
 		std::unique_ptr<GradNoiseTracker> noiseTrackerPolicy, noiseTrackerValueNet;

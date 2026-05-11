@@ -5,6 +5,32 @@
 
 namespace RLGPC {
 
+EARLObservationParser::ParsedObs EARLObservationParser::Unflatten(torch::Tensor input, int num_q, int num_entities, int query_features, int kv_features) {
+    if (input.dim() != 2) {
+        throw std::invalid_argument("EARLObservationParser::Unflatten: Invalid input tensor dimensions. Expected 2 [Batch, ObsSize], got " + std::to_string(input.dim()));
+    }
+    int q_size = num_q * query_features;
+    int kv_size = num_entities * kv_features;
+    int expected_size = q_size + kv_size + num_entities;
+    if (input.size(1) != expected_size) {
+        throw std::invalid_argument("EARLObservationParser::Unflatten: Invalid input tensor size at dim 1. Expected " + std::to_string(expected_size) + ", got " + std::to_string(input.size(1)));
+    }
+
+    // Zero-copy unflattening using .view()
+    torch::Tensor q = input.slice(1, 0, q_size).view({-1, num_q, query_features});
+    torch::Tensor kv = input.slice(1, q_size, q_size + kv_size).view({-1, num_entities, kv_features});
+    torch::Tensor mask_float = input.slice(1, q_size + kv_size, q_size + kv_size + num_entities);
+    
+    // Convert float mask back to boolean (True means ignore/padding)
+    // Note: While this .to() cast allocates a new tensor on the hot path, we accept this minor 
+    // overhead because the PPO Gym interface strictly requires observations to be returned as a 
+    // contiguous std::vector<float>. Packing booleans or dealing with raw bit-casts adds unnecessary 
+    // complexity for an array of only 41 elements.
+    torch::Tensor mask = mask_float.to(torch::kBool);
+
+    return {q, kv, mask};
+}
+
 TransformerPolicy::TransformerPolicy(
     int num_q, int num_entities, int query_features, int kv_features,
     std::vector<int64_t> splits,
@@ -13,13 +39,10 @@ TransformerPolicy::TransformerPolicy(
         num_q * query_features + num_entities * kv_features + num_entities, // Total input amount
         splits.size(), // Action amount
         {256, 256}, // Dummy layer sizes to satisfy base class
-        device, temperature),
+        device, temperature, false /* build_network */),
       num_q_(num_q), num_entities_(num_entities),
       query_features_(query_features), kv_features_(kv_features),
       splits_(std::move(splits)) {
-    
-    // Clear the dummy sequential added by base class
-    seq = {};
 
     perceiver_ = register_module("perceiver", EARLPerceiver(num_q_, query_features_, kv_features_, 256, 4, 3));
     predictor_ = register_module("predictor", ControlsPredictorDiscrete(256, splits_));
@@ -84,28 +107,10 @@ void TransformerPolicy::CopyTo(DiscretePolicy& to) {
  * @throws std::invalid_argument if tensor dimensions or input bounds do not match configurations.
  */
 torch::Tensor TransformerPolicy::GetOutput(torch::Tensor input) {
-    if (input.dim() != 2) {
-        throw std::invalid_argument("TransformerPolicy::GetOutput: Invalid input tensor dimensions. Expected 2 [Batch, ObsSize], got " + std::to_string(input.dim()));
-    }
-    int q_size = num_q_ * query_features_;
-    int kv_size = num_entities_ * kv_features_;
-    int expected_size = q_size + kv_size + num_entities_;
-    if (input.size(1) != expected_size) {
-        throw std::invalid_argument("TransformerPolicy::GetOutput: Invalid input tensor size at dim 1. Expected " + std::to_string(expected_size) + ", got " + std::to_string(input.size(1)));
-    }
-
-    // Zero-copy unflattening using .view()
-    // input shape: [batch, obs_size]
-
-    torch::Tensor q = input.slice(1, 0, q_size).view({-1, num_q_, query_features_});
-    torch::Tensor kv = input.slice(1, q_size, q_size + kv_size).view({-1, num_entities_, kv_features_});
-    torch::Tensor mask_float = input.slice(1, q_size + kv_size, q_size + kv_size + num_entities_);
+    auto parsed = EARLObservationParser::Unflatten(input, num_q_, num_entities_, query_features_, kv_features_);
     
-    // Convert float mask back to boolean (True means ignore/padding)
-    torch::Tensor mask = mask_float.to(torch::kBool);
-
     // Forward pass
-    torch::Tensor latent = perceiver_->forward(q, kv, mask);
+    torch::Tensor latent = perceiver_->forward(parsed.q, parsed.kv, parsed.mask);
     torch::Tensor latent_flat = latent.squeeze(1); // num_q is 1, squeeze it out
     
     return predictor_->forward_flat(latent_flat) / temperature; // [batch, 21] logits
@@ -242,6 +247,52 @@ DiscretePolicy::BackpropResult TransformerPolicy::GetBackpropData(torch::Tensor 
     auto final_action_log_prob = torch::stack(total_log_probs, -1).sum(-1); // [batch]
 
     return BackpropResult{ final_action_log_prob.to(device, true), total_entropy.to(device).mean() };
+}
+
+} // namespace RLGPC
+
+namespace RLGPC {
+
+TransformerValueEstimator::TransformerValueEstimator(
+    int num_q, int num_entities, int query_features, int kv_features,
+    torch::Device device)
+    : ValueEstimator(num_q * query_features + num_entities * kv_features + num_entities, {256, 1}, device, false /* build_network */),
+      num_q_(num_q), num_entities_(num_entities),
+      query_features_(query_features), kv_features_(kv_features) {
+
+    perceiver_ = register_module("perceiver", EARLPerceiver(num_q_, query_features_, kv_features_, 256, 4, 3));
+    head_ = register_module("head", torch::nn::Sequential(torch::nn::Linear(256, 1)));
+
+    this->to(device, true);
+}
+
+torch::Tensor TransformerValueEstimator::Forward(torch::Tensor input) {
+    auto parsed = EARLObservationParser::Unflatten(input, num_q_, num_entities_, query_features_, kv_features_);
+    
+    // Forward pass
+    torch::Tensor latent = perceiver_->forward(parsed.q, parsed.kv, parsed.mask);
+    torch::Tensor latent_flat = latent.squeeze(1); // num_q is 1, squeeze it out
+    
+    return head_->forward(latent_flat); // [batch, 1]
+}
+
+void TransformerValueEstimator::Load(std::filesystem::path path, torch::Device device) {
+    torch::serialize::InputArchive archive;
+    archive.load_from(path.string(), device);
+    this->load(archive);
+}
+
+void TransformerValueEstimator::Save(std::filesystem::path path) const {
+    torch::serialize::OutputArchive archive;
+    this->save(archive);
+    archive.save_to(path.string());
+}
+
+std::vector<uint64_t> TransformerValueEstimator::GetSizes() {
+    std::vector<uint64_t> result = {};
+    for (auto param : this->parameters())
+        result.push_back(param.numel());
+    return result;
 }
 
 } // namespace RLGPC
