@@ -44,8 +44,11 @@ namespace RLGSC {
 
 		for (int i = 0; i < match->teamSize; i++) {
 			arena->AddCar(Team::BLUE, carConfig);
-			if (match->spawnOpponents)
+		}
+		if (match->spawnOpponents) {
+			for (int i = 0; i < match->teamSize; i++) {
 				arena->AddCar(Team::ORANGE, carConfig);
+			}
 		}
 
 		eventTracker.SetShotCallback(_ShotEventCallback, this);
@@ -75,10 +78,12 @@ namespace RLGSC {
 
 			{ // Step arena with actions
 				// std::cout << "Gym::Step: Stepping arena" << std::endl;
-				auto carItr = arena->_cars.begin();
 				for (int i = 0; i < actions.size(); i++) {
-					(*carItr)->controls = (CarControls)actions[i];
-					carItr++;
+					Car* car = arena->GetCar(prevState.players[i].carId);
+					if (!car) {
+						throw std::runtime_error("Gym::Step FAILED: Car ID " + std::to_string(prevState.players[i].carId) + " found in prevState but missing from Arena!");
+					}
+					car->controls = (CarControls)actions[i];
 				}
 
 				arena->Step(tickSkip - actionDelay);

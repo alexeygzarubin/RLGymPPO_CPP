@@ -1,6 +1,7 @@
 #include "GameState.h"
 
 #include "../../Math.h"
+#include <algorithm>
 
 using namespace RLGSC;
 
@@ -59,16 +60,21 @@ void RLGSC::GameState::UpdateFromArena(Arena* arena) {
 	ball = PhysObj(ballState);
 	ballInv = ball.Invert();
 
-	players.resize(arena->_cars.size());
+	std::vector<Car*> sortedCars;
+	sortedCars.reserve(arena->_cars.size());
+	for (Car* car : arena->_cars) sortedCars.push_back(car);
+	
+	std::sort(sortedCars.begin(), sortedCars.end(), [](Car* a, Car* b) {
+		if (a->team != b->team) return a->team == Team::BLUE;
+		return a->id < b->id;
+	});
 
-	auto carItr = arena->_cars.begin();
+	players.resize(sortedCars.size());
 	for (int i = 0; i < players.size(); i++) {
 		auto& player = players[i];
-		player.UpdateFromCar(*carItr, arena->tickCount, tickSkip);
+		player.UpdateFromCar(sortedCars[i], arena->tickCount, tickSkip);
 		if (player.ballTouchedStep)
 			lastTouchCarID = player.carId;
-
-		carItr++;
 	}
 
 	if (!boostPadIndexMapBuilt) {
