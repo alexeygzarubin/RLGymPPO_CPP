@@ -36,10 +36,10 @@ void RLGPC::ExperienceBuffer::SubmitExperience(ExperienceTensors& _data) {
 
 		int64_t endSpace = maxSize - head;
 		if (addAmount <= endSpace) {
-			ourTen.slice(0, head, head + addAmount).copy_(addTen, true);
+			ourTen.slice(0, head, head + addAmount).copy_(addTen, false);
 		} else {
-			ourTen.slice(0, head, maxSize).copy_(addTen.slice(0, 0, endSpace), true);
-			ourTen.slice(0, 0, addAmount - endSpace).copy_(addTen.slice(0, endSpace, addAmount), true);
+			ourTen.slice(0, head, maxSize).copy_(addTen.slice(0, 0, endSpace), false);
+			ourTen.slice(0, 0, addAmount - endSpace).copy_(addTen.slice(0, endSpace, addAmount), false);
 		}
 	}
 

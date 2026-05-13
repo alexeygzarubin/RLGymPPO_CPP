@@ -62,7 +62,7 @@ void RLGPC::DiscretePolicy::CopyTo(DiscretePolicy& to) {
 		auto fromParams = this->parameters();
 		auto toParams = to.parameters();
 		for (int i = 0; i < fromParams.size(); i++) {
-			toParams[i].copy_(fromParams[i], true);
+			toParams[i].copy_(fromParams[i], false);
 		}
 	} catch (std::exception& e) {
 		RG_ERR_CLOSE("DiscretePolicy::CopyTo() exception: " << e.what());

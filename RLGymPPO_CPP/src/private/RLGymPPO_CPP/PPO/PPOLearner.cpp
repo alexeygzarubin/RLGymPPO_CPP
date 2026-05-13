@@ -20,7 +20,7 @@ void _CopyModelParamsHalf(nn::Module* from, nn::Module* to) {
 		auto toParams = to->parameters();
 		for (int i = 0; i < fromParams.size(); i++) {
 			auto scaledParams = fromParams[i].to(RG_HALFPERC_TYPE);
-			toParams[i].copy_(scaledParams, true);
+			toParams[i].copy_(scaledParams, false);
 		}
 	} catch (std::exception& e) {
 		throw std::runtime_error(std::string("PPOLearner::_CopyModelParamsHalf() exception: ") + e.what());

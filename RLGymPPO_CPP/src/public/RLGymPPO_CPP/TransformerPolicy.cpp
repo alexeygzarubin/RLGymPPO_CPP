@@ -82,7 +82,7 @@ void TransformerPolicy::CopyTo(DiscretePolicy& to) {
         auto fromParams = this->parameters();
         auto toParams = to.parameters();
         for (size_t i = 0; i < fromParams.size(); i++) {
-            toParams[i].copy_(fromParams[i], true);
+            toParams[i].copy_(fromParams[i], false);
         }
     } catch (std::exception& e) {
         RG_ERR_CLOSE("TransformerPolicy::CopyTo() exception: " << e.what());

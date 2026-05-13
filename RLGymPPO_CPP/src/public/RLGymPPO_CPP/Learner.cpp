@@ -504,7 +504,7 @@ static void _CopyModelParams(torch::nn::Module* from, torch::nn::Module* to) {
 		auto toParams = to->parameters();
 		for (int i = 0; i < fromParams.size(); i++) {
 			auto scaledParams = fromParams[i].to(toParams[i].device(), toParams[i].dtype());
-			toParams[i].copy_(scaledParams, true);
+			toParams[i].copy_(scaledParams, false);
 		}
 	} catch (std::exception& e) {
 		throw std::runtime_error(std::string("Learner::_CopyModelParams exception: ") + e.what());
@@ -737,7 +737,7 @@ void RLGPC::Learner::AddNewExperience(GameTrajectory& gameTraj, Report& report) 
 		}
 		auto valPredsPart = ppo->valueNet->Forward(statesPart.to(ppo->device, true, true)).cpu().flatten();
 		RG_ASSERT(valPredsPart.size(0) == (end - start));
-		valPredsTensor.slice(0, start, end).copy_(valPredsPart, true);
+		valPredsTensor.slice(0, start, end).copy_(valPredsPart, false);
 	}
 #endif
 
