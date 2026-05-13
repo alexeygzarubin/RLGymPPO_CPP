@@ -106,8 +106,8 @@ ActionSet RLGPC::InferUnit::InferPolicyAll(
 	
 	RG_NOGRAD;
 	policy->temperature = temperature;
-	torch::Tensor inputTen = FLIST2_TO_TENSOR(obsSet).to(policy->device);
-	auto actionResult = policy->GetAction(inputTen, deterministic);
+	torch::Tensor input_ten = FLIST2_TO_TENSOR(obsSet).to(policy->device);
+	auto actionResult = policy->GetAction(input_ten, deterministic);
 	auto actionParserInput = TENSOR_TO_ILIST(actionResult.action.flatten());
 
 	return actionParser->ParseActions(actionParserInput, state);
@@ -133,13 +133,14 @@ Action RLGPC::InferUnit::InferPolicySingle(
 
 	RG_NOGRAD;
 	policy->temperature = temperature;
-	torch::Tensor inputTen = torch::tensor(obs).to(policy->device);
-	auto actionResult = policy->GetAction(inputTen, deterministic);
-	int actAmt = policy->actionAmount;
-	IList actionParserInput = IList(state.players.size() * actAmt);
+	torch::Tensor input_ten = torch::from_blob(obs.data(), {static_cast<long>(obs.size())}).to(policy->device);
+	if (input_ten.dim() == 1) input_ten = input_ten.unsqueeze(0);
+	auto actionResult = policy->GetAction(input_ten, deterministic);
+	int act_amt = policy->actionAmount;
+	IList actionParserInput = IList(state.players.size() * act_amt);
 	auto flatAction = TENSOR_TO_ILIST(actionResult.action.flatten());
-	for(int a=0; a < actAmt; ++a) {
-		actionParserInput[playerIndex * actAmt + a] = flatAction[a];
+	for(int a=0; a < act_amt; ++a) {
+		actionParserInput[playerIndex * act_amt + a] = flatAction[a];
 	}
 
 	return actionParser->ParseActions(actionParserInput, state)[playerIndex];
@@ -157,8 +158,9 @@ RLGSC::FList RLGPC::InferUnit::InferPolicySingleDistrib(
 
 	RG_NOGRAD;
 	policy->temperature = temperature;
-	torch::Tensor inputTen = torch::tensor(obs).to(policy->device);
-	return TENSOR_TO_FLIST(policy->GetActionProbs(inputTen).reshape({ policy->actionAmount }));
+	torch::Tensor input_ten = torch::from_blob(obs.data(), {static_cast<long>(obs.size())}).to(policy->device);
+	if (input_ten.dim() == 1) input_ten = input_ten.unsqueeze(0);
+	return TENSOR_TO_FLIST(policy->GetActionProbs(input_ten).reshape({ policy->actionAmount }));
 }
 
 RLGSC::FList RLGPC::InferUnit::InferCriticAll(const RLGSC::GameState& state, const RLGSC::ActionSet& prevActions) {
@@ -169,8 +171,8 @@ RLGSC::FList RLGPC::InferUnit::InferCriticAll(const RLGSC::GameState& state, con
 	FList2 obsSet = GetObs(state, prevActions);
 
 	RG_NOGRAD;
-	torch::Tensor inputTen = FLIST2_TO_TENSOR(obsSet).to(critic->device);
-	return TENSOR_TO_FLIST(critic->Forward(inputTen).cpu());
+	torch::Tensor input_ten = FLIST2_TO_TENSOR(obsSet).to(critic->device);
+	return TENSOR_TO_FLIST(critic->Forward(input_ten).cpu());
 }
 
 float RLGPC::InferUnit::InferCriticSingle(const RLGSC::PlayerData& player, const RLGSC::GameState& state, const RLGSC::Action& prevAction) {
@@ -181,6 +183,7 @@ float RLGPC::InferUnit::InferCriticSingle(const RLGSC::PlayerData& player, const
 	FList obs = GetObs(player, state, prevAction);
 
 	RG_NOGRAD;
-	torch::Tensor inputTen = torch::tensor(obs).to(critic->device);
-	return critic->Forward(inputTen).cpu().item<float>();
+	torch::Tensor input_ten = torch::from_blob(obs.data(), {static_cast<long>(obs.size())}).to(critic->device);
+	if (input_ten.dim() == 1) input_ten = input_ten.unsqueeze(0);
+	return critic->Forward(input_ten).cpu().item<float>();
 }

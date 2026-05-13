@@ -165,6 +165,9 @@ torch::Tensor TransformerPolicy::GetActionProbs(torch::Tensor obs) {
  * @throws std::invalid_argument on mismatched observation tensor dimensions.
  */
 DiscretePolicy::ActionResult TransformerPolicy::GetAction(torch::Tensor obs, bool deterministic) {
+    if (obs.dim() == 1) {
+        obs = obs.unsqueeze(0);
+    }
     if (obs.dim() != 2) {
         throw std::invalid_argument("TransformerPolicy::GetAction: Invalid obs tensor dimensions. Expected 2 [Batch, ObsSize], got " + std::to_string(obs.dim()));
     }
