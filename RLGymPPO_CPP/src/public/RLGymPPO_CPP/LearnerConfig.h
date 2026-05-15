@@ -67,6 +67,7 @@ namespace RLGPC {
 		//	e.g. a checkpoint at 20,000 steps will save to a subfolder called "20000"
 		// Set empty to disable saving
 		std::filesystem::path checkpointSaveFolder = "checkpoints"; 
+		std::string checkpointSaveSuffix = ""; // Appended to the checkpoint subfolder name
 		bool saveFolderAddUnixTimestamp = false; // Appends the unix time to checkpointSaveFolder
 
 		// Save every timestep

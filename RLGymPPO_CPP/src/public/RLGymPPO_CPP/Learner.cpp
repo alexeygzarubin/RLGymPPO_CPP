@@ -296,7 +296,7 @@ void RLGPC::Learner::Save() {
 	if (config.checkpointSaveFolder.empty())
 		RG_ERR_CLOSE("Learner::Save(): Cannot save because config.checkpointSaveFolder is not set");
 
-	std::filesystem::path saveFolder = config.checkpointSaveFolder / std::to_string(totalTimesteps);
+	std::filesystem::path saveFolder = config.checkpointSaveFolder / (std::to_string(totalTimesteps) + config.checkpointSaveSuffix);
 	std::filesystem::create_directories(saveFolder);
 
 	RG_LOG("Saving to folder " << saveFolder << "...");
@@ -307,20 +307,24 @@ void RLGPC::Learner::Save() {
 	if (config.checkpointsToKeep != -1) {
 		int numCheckpoints = 0;
 		int64_t lowestCheckpointTS = INT64_MAX;
+		std::string lowestCheckpointName = "";
 
 		for (auto entry : std::filesystem::directory_iterator(config.checkpointLoadFolder)) {
 			if (entry.is_directory()) {
-				auto name = entry.path().filename();
+				auto name = entry.path().filename().string();
 				try {
 					int64_t nameVal = std::stoll(name);
-					lowestCheckpointTS = RS_MIN(nameVal, lowestCheckpointTS);
+					if (nameVal < lowestCheckpointTS) {
+					    lowestCheckpointTS = nameVal;
+					    lowestCheckpointName = name;
+					}
 					numCheckpoints++;
 				} catch (...) {}
 			}
 		}
 
-		if (numCheckpoints > config.checkpointsToKeep) {
-			std::filesystem::path removePath = config.checkpointLoadFolder / std::to_string(lowestCheckpointTS);
+		if (numCheckpoints > config.checkpointsToKeep && !lowestCheckpointName.empty()) {
+			std::filesystem::path removePath = config.checkpointLoadFolder / lowestCheckpointName;
 			try {
 				std::filesystem::remove_all(removePath);
 			} catch (std::exception& e) {
@@ -339,20 +343,24 @@ void RLGPC::Learner::Load() {
 	RG_LOG("Loading most recent checkpoint in " << config.checkpointLoadFolder << "...");
 
 	int64_t highest = -1;
+	std::string highestName = "";
 	if (std::filesystem::is_directory(config.checkpointLoadFolder)) {
 		for (auto entry : std::filesystem::directory_iterator(config.checkpointLoadFolder)) {
 			if (entry.is_directory()) {
-				auto name = entry.path().filename();
+				auto name = entry.path().filename().string();
 				try {
 					int64_t nameVal = std::stoll(name);
-					highest = RS_MAX(nameVal, highest);
+					if (nameVal > highest) {
+					    highest = nameVal;
+					    highestName = name;
+					}
 				} catch (...) {}
 			}
 		}
 	}
 
-	if (highest != -1) {
-		std::filesystem::path loadFolder = config.checkpointLoadFolder / std::to_string(highest);
+	if (highest != -1 && !highestName.empty()) {
+		std::filesystem::path loadFolder = config.checkpointLoadFolder / highestName;
 		RG_LOG(" > Loading checkpoint " << loadFolder << "...");
 		LoadStats(loadFolder / STATS_FILE_NAME);
 		ppo->LoadFrom(loadFolder);
@@ -371,9 +379,10 @@ void RLGPC::Learner::Load() {
 				
 				nlohmann::json bestRating = {};
 				int64_t bestTimesteps = -1;
+				std::string bestName = "";
 				for (auto entry : std::filesystem::directory_iterator(config.checkpointLoadFolder)) {
 					if (entry.is_directory()) {
-						auto name = entry.path().filename();
+						auto name = entry.path().filename().string();
 						try {
 							int64_t nameVal = std::stoll(name);
 
@@ -388,6 +397,7 @@ void RLGPC::Learner::Load() {
 										if (j.contains("skill_rating")) {
 											bestRating = j["skill_rating"];
 											bestTimesteps = nameVal;
+											bestName = name;
 										}
 									}
 								}
@@ -397,14 +407,14 @@ void RLGPC::Learner::Load() {
 					}
 				}
 
-				if (bestTimesteps != -1 && bestTimesteps >= targetTimesteps - maxAcceptableOverage) {
+				if (bestTimesteps != -1 && bestTimesteps >= targetTimesteps - maxAcceptableOverage && !bestName.empty()) {
 					RG_LOG(
 						" > [" << i << "]: Found at " << bestTimesteps << 
 						" (target = " << targetTimesteps << ", delta = " << (targetTimesteps - bestTimesteps) << "), " <<
 						"rating: " << bestRating
 					);
 
-					auto oldPolicy = ppo->LoadAdditionalPolicy(config.checkpointLoadFolder / std::to_string(bestTimesteps));
+					auto oldPolicy = ppo->LoadAdditionalPolicy(config.checkpointLoadFolder / bestName);
 
 					if (oldPolicy) {
 						skillTracker->AppendOldPolicy(
