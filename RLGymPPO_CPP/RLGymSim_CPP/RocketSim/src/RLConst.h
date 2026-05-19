@@ -13,6 +13,10 @@ namespace RLConst {
 
 		ARENA_EXTENT_X = 4096,
 		ARENA_EXTENT_Y = 5120, // Does not include inner-goal
+
+		ARENA_CORNER_CROSS_X = 2944.f, // X coordinate where the 45-degree corner wall meets the back wall
+		ARENA_CORNER_CROSS_Y = 3968.f, // Y coordinate where the 45-degree corner wall meets the side wall
+
 		ARENA_HEIGHT = 2048,
 
 		// The theoretical roof is 2048, but the actual physical ceiling collision mesh
@@ -198,6 +202,7 @@ namespace RLConst {
 		// Mostly from a Rocket Science video: https://www.youtube.com/watch?v=xgfa-qZyInw
 		
 		constexpr float
+			BOOST_PAD_BIG_Z = 73.f,
 			CYL_HEIGHT = 95,
 			CYL_RAD_BIG = 208,
 			CYL_RAD_SMALL = 144,
