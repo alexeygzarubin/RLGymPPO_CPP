@@ -15,6 +15,11 @@ namespace RLConst {
 		ARENA_EXTENT_Y = 5120, // Does not include inner-goal
 		ARENA_HEIGHT = 2048,
 
+		// The theoretical roof is 2048, but the actual physical ceiling collision mesh
+		// that a car interacts with is at Z = 2044. Normalizing by this true physical
+		// ceiling provides a perfectly tight [-1.0, 1.0] bound.
+		ARENA_HEIGHT_PHYSICAL = 2044.f,
+
 		ARENA_EXTENT_X_HOOPS = (8900 / 3.f),
 		ARENA_EXTENT_Y_HOOPS = 3581,
 		ARENA_HEIGHT_HOOPS = 1820,
