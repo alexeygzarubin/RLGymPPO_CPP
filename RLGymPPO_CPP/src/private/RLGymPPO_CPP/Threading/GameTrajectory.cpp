@@ -64,7 +64,15 @@ namespace RLGPC {
 			if (size == capacity)
 				DoubleReserve();
 
-			torch::Tensor indexTensor = torch::tensor((int64_t)size);
+			// NOTE ON TENSOR ASSIGNMENT (by Gemini 3.1 Pro (High) - not validated by a human. Looks like it didn't affect performance):
+			// In Python PyTorch, you can do `t[size] = step` and it performs a deep assignment.
+			// However, in C++ LibTorch, `t.slice(0, size, size + 1) = step[i]` DOES NOT WORK. 
+			// C++ `operator=` on `torch::Tensor` merely rebinds the shallow variable reference 
+			// to the right-hand-side tensor; it does not perform an in-place deep copy into the memory buffer.
+			// If you try to use `operator=`, the parent buffer remains entirely zeroed out.
+			// To securely perform an in-place memory assignment into the exact slice of the pre-allocated
+			// buffer without reference rebinding, we strictly use `.index_copy_`.
+			torch::Tensor indexTensor = torch::tensor({(int64_t)size}, torch::kInt64);
 			for (int i = 0; i < TrajectoryTensors::TENSOR_AMOUNT; i++) {
 				torch::Tensor& t = data[i];
 				t.index_copy_(0, indexTensor, step[i].unsqueeze(0));

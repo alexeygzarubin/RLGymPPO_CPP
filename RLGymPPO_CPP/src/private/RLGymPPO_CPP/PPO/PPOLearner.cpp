@@ -223,10 +223,15 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					if (trainCritic)
 						gradScaler->scale(valueLoss).backward();
 				} else {
-					if (trainPolicy)
-						ppoLoss.backward(); // 29%
-					if (trainCritic)
-						valueLoss.backward(); // 24%
+					try {
+						if (trainPolicy)
+							ppoLoss.backward(); // 29%
+						if (trainCritic)
+							valueLoss.backward(); // 24%
+					} catch (const std::exception& e) {
+						std::cout << "CRITICAL ERROR: PyTorch backward pass failed: " << e.what() << std::endl;
+						throw;
+					}
 				}
 
 				recordTime("PPO Gradient Time", timer.Elapsed());

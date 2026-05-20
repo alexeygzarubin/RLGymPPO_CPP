@@ -46,7 +46,13 @@ void RLGPC::ValueEstimator::Save(std::filesystem::path path) const {
 
 std::vector<uint64_t> RLGPC::ValueEstimator::GetSizes() {
 	std::vector<uint64_t> result = {};
-	for (auto param : this->parameters())
-		result.push_back(param.numel());
+	for (auto param : this->parameters()) {
+		// See RLGPC::DiscretePolicy::GetSizes() for detailed explanation of why 
+		// precise topological dimensions are used instead of `param.numel()`.
+		result.push_back(param.dim());
+		for (int64_t dim_size : param.sizes()) {
+			result.push_back(dim_size);
+		}
+	}
 	return result;
 }

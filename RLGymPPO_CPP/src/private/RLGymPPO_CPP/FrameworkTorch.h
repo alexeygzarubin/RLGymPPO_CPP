@@ -30,7 +30,7 @@ namespace RLGPC {
 		auto tensor = torch::zeros({ (int)list.size(), innerSize }, options);
 		for (int i = 0; i < list.size(); i++)
 			// Torch needs the input array to be non-const for whatever reason
-			tensor.slice(0, i, i + 1) = torch::from_blob((float*)list[i].data(), { innerSize }, options);
+			tensor.slice(0, i, i + 1).copy_(torch::from_blob((float*)list[i].data(), { 1, innerSize }, options));
 
 		return tensor;
 	}

@@ -38,8 +38,27 @@ RLGPC::DiscretePolicy* RLGPC::DiscretePolicy::Clone() const {
 
 std::vector<uint64_t> RLGPC::DiscretePolicy::GetSizes() const {
 	std::vector<uint64_t> result = {};
-	for (auto param : this->parameters())
-		result.push_back(param.numel());
+	for (auto param : this->parameters()) {
+		// PREVIOUS IMPLEMENTATION:
+		// result.push_back(param.numel());
+		// 
+		// WHY IT WAS CHANGED:
+		// Using `numel()` only returns the total number of flattened elements (e.g. 64 * 32 = 2048).
+		// This falsely allowed PyTorch to load older checkpoint tensors into new architectures 
+		// if they happened to share the same total element count but different topological dimensions.
+		// PyTorch `load()` silently succeeds, but the moment Autograd attempts a backward pass or tensor copy,
+		// it triggers a catastrophic `0xc000001d` (Illegal Instruction) / `0xc0000005` crash.
+		// 
+		// NEW IMPLEMENTATION:
+		// We now sequentially record the number of dimensions (`param.dim()`) followed by the
+		// exact size of each dimension (`param.sizes()`). This accurately fingerprints the precise tensor 
+		// topology, guaranteeing that the loader fails-fast natively with a printed mismatch error 
+		// before memory corruption can occur.
+		result.push_back(param.dim());
+		for (int64_t dim_size : param.sizes()) {
+			result.push_back(dim_size);
+		}
+	}
 	return result;
 }
 
