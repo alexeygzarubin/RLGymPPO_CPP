@@ -59,7 +59,7 @@ torch::Tensor EARLPerceiverBlockImpl::forward(torch::Tensor q, torch::Tensor kv,
     torch::Tensor q_t = q_norm.transpose(0, 1);
     torch::Tensor kv_t = kv_norm.transpose(0, 1);
 
-    // CRITICAL (by Gemini 3.1 Pro (High) - `need_weights = false|true` seemingly has no performance difference): 
+    // CRITICAL (by Gemini 3.1 Pro (High) - `need_weights = true` appears to be faster maybe): 
     // 
     // The fifth argument `true` is `need_weights`.
     // Setting `need_weights = true` intentionally DISABLES PyTorch's Scaled Dot-Product Attention 
@@ -76,11 +76,11 @@ torch::Tensor EARLPerceiverBlockImpl::forward(torch::Tensor q, torch::Tensor kv,
     // By forcing `true`, we incur a slight performance penalty but guarantee that LibTorch falls 
     // back to the stable, explicit attention matrix computation path, which correctly and safely 
     // handles our dynamic padding masks during PPO optimization.
-    // auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, true);
+    auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, true);
 
     // attention takes (query, key, value, key_padding_mask, need_weights, attn_mask)
     // pass key_padding_mask as the boolean mask to ignore non-existent entities
-    auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, false);
+    // auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, false);
     
     // Transpose output back to [batch, seq, features]
     torch::Tensor attn_out = std::get<0>(attn_res).transpose(0, 1);
