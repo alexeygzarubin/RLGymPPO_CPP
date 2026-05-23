@@ -90,11 +90,11 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 #endif
 	}
 
-	static amp::GradScaler* gradScaler = NULL;
+	static std::unique_ptr<amp::GradScaler> gradScaler = nullptr;
 #ifdef RG_CUDA_SUPPORT
 	if (autocast && !gradScaler) {
 		RG_LOG("Creating grad scaler...");
-		gradScaler = new amp::GradScaler();
+		gradScaler = std::make_unique<amp::GradScaler>();
 	}
 #endif
 
