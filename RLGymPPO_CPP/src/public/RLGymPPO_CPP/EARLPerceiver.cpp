@@ -1,4 +1,5 @@
 #include "EARLPerceiver.h"
+#include <ATen/autocast_mode.h>
 
 namespace RLGPC {
 
@@ -59,28 +60,16 @@ torch::Tensor EARLPerceiverBlockImpl::forward(torch::Tensor q, torch::Tensor kv,
     torch::Tensor q_t = q_norm.transpose(0, 1);
     torch::Tensor kv_t = kv_norm.transpose(0, 1);
 
-    // CRITICAL (by Gemini 3.1 Pro (High) - `need_weights = true` appears to be faster maybe): 
-    // 
-    // The fifth argument `true` is `need_weights`.
-    // Setting `need_weights = true` intentionally DISABLES PyTorch's Scaled Dot-Product Attention 
-    // (SDPA / FlashAttention) kernels. 
-    // 
-    // WHY WE DISABLE SDPA:
-    // While SDPA is highly optimized, the LibTorch C++ SDPA implementation imposes extremely strict 
-    // contiguous memory and striding constraints during the Autograd backward pass, especially when 
-    // applying 2D `key_padding_mask` arrays across batched tensors of variable active entities.
-    // When SDPA is allowed to run (`need_weights = false`), it attempts to compute the backward 
-    // graph against our padding mask, which has historically caused catastrophic memory striding 
-    // crashes (`0xc000001d` Illegal Instruction) across parallel rollout threads.
-    // 
-    // By forcing `true`, we incur a slight performance penalty but guarantee that LibTorch falls 
-    // back to the stable, explicit attention matrix computation path, which correctly and safely 
-    // handles our dynamic padding masks during PPO optimization.
-    auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, true);
-
-    // attention takes (query, key, value, key_padding_mask, need_weights, attn_mask)
-    // pass key_padding_mask as the boolean mask to ignore non-existent entities
-    // auto attn_res = attention_->forward(q_t, kv_t, kv_t, mask, false);
+    // By forcing `false`, we allow PyTorch to use optimized SDPA/FlashAttention kernels,
+    // which significantly speeds up the forward and backward pass of the attention layer.
+    // Striding crashes and BFloat16 missing kernels have been resolved by disabling AMP.
+    bool autocast_state = at::autocast::is_autocast_enabled(at::kCUDA);
+    at::autocast::set_autocast_enabled(at::kCUDA, false);
+    
+    // Explicitly cast to FP32 to ensure the pre-compiled masked_fill dispatch doesn't crash on Half
+    auto attn_res = attention_->forward(q_t.to(torch::kFloat32), kv_t.to(torch::kFloat32), kv_t.to(torch::kFloat32), mask, false);
+    
+    at::autocast::set_autocast_enabled(at::kCUDA, autocast_state);
     
     // Transpose output back to [batch, seq, features]
     torch::Tensor attn_out = std::get<0>(attn_res).transpose(0, 1);

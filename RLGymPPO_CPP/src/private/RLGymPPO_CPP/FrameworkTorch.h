@@ -10,17 +10,19 @@
 #define RG_NOGRAD torch::NoGradGuard _noGradGuard
 
 #define RG_AUTOCAST_ON() { \
-at::autocast::set_enabled(true); \
-at::autocast::set_autocast_gpu_dtype(torch::kBFloat16); \
-at::autocast::set_autocast_cpu_dtype(torch::kFloat); \
+at::autocast::set_autocast_enabled(at::kCUDA, true); \
+at::autocast::set_autocast_enabled(at::kCPU, true); \
+at::autocast::set_autocast_dtype(at::kCUDA, torch::kHalf); \
+at::autocast::set_autocast_dtype(at::kCPU, torch::kFloat); \
 }
 
 #define RG_AUTOCAST_OFF() { \
 at::autocast::clear_cache(); \
-at::autocast::set_enabled(false); \
+at::autocast::set_autocast_enabled(at::kCUDA, false); \
+at::autocast::set_autocast_enabled(at::kCPU, false); \
 }
 
-#define RG_HALFPERC_TYPE torch::ScalarType::BFloat16
+#define RG_HALFPERC_TYPE torch::ScalarType::Half
 
 namespace RLGPC {
 	// Method from: https://stackoverflow.com/questions/63466847/how-is-it-possible-to-convert-a-stdvectorstdvectordouble-to-a-torchten
