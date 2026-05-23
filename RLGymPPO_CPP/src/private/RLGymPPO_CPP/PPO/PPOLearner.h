@@ -25,6 +25,11 @@ namespace RLGPC {
 
 		std::unique_ptr<GradNoiseTracker> noiseTrackerPolicy, noiseTrackerValueNet;
 
+		// AMP grad scaler: member-owned to ensure RAII lifetime tied to this instance.
+		// A static local would be shared across all PPOLearner instances (cross-contaminating
+		// optimizer states and scale factors). Nullptr when autocastLearn is false.
+		std::unique_ptr<torch::amp::GradScaler> gradScaler;
+
 		PPOLearnerConfig config;
 		torch::Device device;
 
