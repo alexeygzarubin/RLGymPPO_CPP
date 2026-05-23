@@ -279,6 +279,13 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 				}
 			}
 
+			if (autocast) {
+				if (trainPolicy)
+					gradScaler->unscale_(*policyOptimizer);
+				if (trainCritic)
+					gradScaler->unscale_(*valueOptimizer);
+			}
+
 			if (config.measureGradientNoise) {
 				if (trainPolicy)
 					noiseTrackerPolicy->Update(policy->seq);
