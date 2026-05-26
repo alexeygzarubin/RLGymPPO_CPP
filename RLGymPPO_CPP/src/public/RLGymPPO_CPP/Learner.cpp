@@ -154,9 +154,15 @@ RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
 		}
 	}
 
+#ifdef _WIN32
+	bool blockConcurrent = inferDevice.is_cpu();
+#else
+	bool blockConcurrent = false;
+#endif
+
 	agentMgr = std::make_unique<ThreadAgentManager>(
 		agentPolicy, agentPolicyHalf, expBuffer.get(), 
-		config.standardizeOBS, config.deterministic, inferDevice.is_cpu() && torch::get_num_threads() > 1,
+		config.standardizeOBS, config.deterministic, blockConcurrent,
 		(uint64_t)(config.timestepsPerIteration * 1.5f),
 		inferDevice
 	);
