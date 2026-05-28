@@ -601,9 +601,6 @@ void RLGPC::Learner::Learn() {
 				throw std::runtime_error(std::string("Learner::Learn: Exception during PPOLearner::Learn(): ") + e.what());
 			}
 
-			if (blockAgentInferDuringLearn)
-				agentMgr->disableCollection = false;
-
 			totalEpochs += config.ppo.epochs;
 
 			if (policyInfer) {
@@ -612,6 +609,13 @@ void RLGPC::Learner::Learn() {
 					_CopyModelParams(ppo->policyHalf.get(), policyInferHalf.get());
 				}
 			}
+
+			// Re-enable collection AFTER copying weights to policyInfer.
+			// Previously this was before _CopyModelParams, causing a data race:
+			// workers would resume inference and read half-written parameters,
+			// crashing in matmul or index_copy_ (SEH 0xc0000005).
+			if (blockAgentInferDuringLearn)
+				agentMgr->disableCollection = false;
 		}
 
 		// Free CUDA cache
