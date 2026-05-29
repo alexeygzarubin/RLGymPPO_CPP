@@ -9,7 +9,7 @@ struct BallPredTracker {
 	std::vector<BallState> predData;
 	size_t numPredTicks;
 
-	int lastUpdateTickCount;
+	uint64_t lastUpdateTickCount;
 
 	// arena: The arena you want to predict the ball for (BallPredTracker will make a copy of it without the cars)
 	// You do not need to make another arena for BallPredTracker, it does that itself
@@ -26,7 +26,7 @@ struct BallPredTracker {
 
 	// An alternate version of UpdatePred which doesn't require the arena, 
 	//	but instead you manually provide the current ball state and the ticks since this tracker was last updated
-	void UpdatePredManual(const BallState& curBallState, int ticksSinceLastUpdate);
+	void UpdatePredManual(const BallState& curBallState, uint64_t ticksSinceLastUpdate);
 
 	// Forcefully re-predicts all ticks
 	void ForceUpdateAllPred(const BallState& initialBallState);

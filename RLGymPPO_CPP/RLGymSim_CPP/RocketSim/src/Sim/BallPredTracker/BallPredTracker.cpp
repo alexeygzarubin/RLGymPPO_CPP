@@ -18,11 +18,11 @@ BallPredTracker::~BallPredTracker() {
 void BallPredTracker::UpdatePredFromArena(Arena* arena) {
 	BallState bs = arena->ball->GetState();
 
-	int ticksSinceLastUpdate = arena->tickCount - lastUpdateTickCount;
+	uint64_t ticksSinceLastUpdate = arena->tickCount - lastUpdateTickCount;
 	UpdatePredManual(bs, ticksSinceLastUpdate);
 }
 
-void BallPredTracker::UpdatePredManual(const BallState& curBallState, int ticksSinceLastUpdate) {
+void BallPredTracker::UpdatePredManual(const BallState& curBallState, uint64_t ticksSinceLastUpdate) {
 
 	bool needsFullRepred;
 	if (ticksSinceLastUpdate < predData.size()) {
