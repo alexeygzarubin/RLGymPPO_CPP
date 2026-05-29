@@ -88,8 +88,8 @@ void RLGPC::ThreadAgentManager::GetMetrics(Report& report) {
 		}
 	}
 	
-	report["Average Step Reward"] = avgStepRew.Get();
-	report["Average Episode Reward"] = avgEpRew.Get();
+	report["Learner/Average Step Reward"] = avgStepRew.Get();
+	report["Learner/Average Episode Reward"] = avgEpRew.Get();
 
 	ThreadAgent::Times avgTimes = {};
 
@@ -100,10 +100,10 @@ void RLGPC::ThreadAgentManager::GetMetrics(Report& report) {
 	for (double& time : avgTimes)
 		time /= agents.size();
 
-	report["Env Step Time"] = avgTimes.envStepTime;
+	report["Learner/Env Step Time"] = avgTimes.envStepTime;
 	// NOTE: Because of non-blocking mode, a good portion of policy inference time is waited when appending trajectories
 	//	This means the trajectory append time is not correct at all, so this is a temporary solution
-	report["Policy Infer Time"] = avgTimes.policyInferTime + avgTimes.trajAppendTime;
+	report["Learner/Policy Infer Time"] = avgTimes.policyInferTime + avgTimes.trajAppendTime;
 }
 
 void RLGPC::ThreadAgentManager::ResetMetrics() {

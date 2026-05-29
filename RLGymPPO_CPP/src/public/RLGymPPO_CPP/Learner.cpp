@@ -441,37 +441,37 @@ void DisplayReport(const RLGPC::Report& report) {
 	//	blank line = print blank line
 	//	'-' before name = indent with dashes and spaces
 	constexpr const char* REPORT_DATA_ORDER[] = {
-		"Average Episode Reward",
-		"Average Step Reward",
-		"Policy Entropy",
-		"Value Function Loss",
+		"Learner/Average Episode Reward",
+		"Learner/Average Step Reward",
+		"Learner/Policy Entropy",
+		"Learner/Value Function Loss",
 		"",
-		"Mean KL Divergence",
-		"SB3 Clip Fraction",
-		"Policy Update Magnitude",
-		"Value Function Update Magnitude",
+		"Learner/Mean KL Divergence",
+		"Learner/SB3 Clip Fraction",
+		"Learner/Policy Update Magnitude",
+		"Learner/Value Function Update Magnitude",
 		"",
-		"Collected Steps/Second",
-		"Overall Steps/Second",
-		"Optimization SPS",
-		"Model Updates/Second",
+		"Learner/Collected Steps per Second",
+		"Learner/Overall Steps per Second",
+		"Learner/Optimization SPS",
+		"Learner/Model Updates per Second",
 		"",
-		"Collection Time",
-		"-Policy Infer Time",
-		"-Env Step Time",
-		"Consumption Time",
-		"-PPO Learn Time",
-		"Collect-Consume Overlap Time",
+		"Learner/Collection Time",
+		"-Learner/Policy Infer Time",
+		"-Learner/Env Step Time",
+		"Learner/Consumption Time",
+		"-Learner/PPO Learn Time",
+		"Learner/Collect-Consume Overlap Time",
 		// TODO: These timers don't work due to non-blocking mode
-		//"--PPO Value Estimate Time",
-		//"--PPO Backprop Data Time",
-		//"--PPO Gradient Time",
-		"Total Iteration Time",
+		//"--Learner/PPO Value Estimate Time",
+		//"--Learner/PPO Backprop Data Time",
+		//"--Learner/PPO Gradient Time",
+		"Learner/Total Iteration Time",
 		"",
-		"Cumulative Model Updates",
-		"Cumulative Timesteps",
+		"Learner/Cumulative Model Updates",
+		"Learner/Cumulative Timesteps",
 		"",
-		"Timesteps Collected"
+		"Learner/Timesteps Collected"
 	};
 
 	for (const char* name : REPORT_DATA_ORDER) {
@@ -638,7 +638,7 @@ void RLGPC::Learner::Learn() {
 
 			skillTracker->RunGames(ppo->policy.get(), timestepsCollected);
 			for (auto& pair : skillTracker->curRating.data) {
-				std::string metricName = RS_STR("Skill Rating" << (pair.first.empty() ? "" : " ") << pair.first);
+				std::string metricName = RS_STR("Learner/Skill Rating" << (pair.first.empty() ? "" : " ") << pair.first);
 				report[metricName] = pair.second;
 			}
 		}
@@ -661,26 +661,26 @@ void RLGPC::Learner::Learn() {
 		double trueEpochTime = RS_MAX(relEpochTime, trueCollectionTime);
 
 		{ // Add timers to report
-			report["Total Iteration Time"] = relEpochTime;
+			report["Learner/Total Iteration Time"] = relEpochTime;
 
-			report["Collection Time"] = relCollectionTime;
-			report["Consumption Time"] = consumptionTime;
-			report["Collect-Consume Overlap Time"] = (trueCollectionTime - relCollectionTime);
+			report["Learner/Collection Time"] = relCollectionTime;
+			report["Learner/Consumption Time"] = consumptionTime;
+			report["Learner/Collect-Consume Overlap Time"] = (trueCollectionTime - relCollectionTime);
 		}
 
 		{ // Add timestep data to report
-			report["Collected Steps/Second"] = (int64_t)(timestepsCollected / trueCollectionTime);
-			report["Overall Steps/Second"] = (int64_t)(timestepsCollected / trueEpochTime);
+			report["Learner/Collected Steps per Second"] = (int64_t)(timestepsCollected / trueCollectionTime);
+			report["Learner/Overall Steps per Second"] = (int64_t)(timestepsCollected / trueEpochTime);
 			if (ppoLearnTime > 0) {
 				int64_t modelUpdatesThisIteration = config.ppo.epochs * std::ceil((double)timestepsCollected / config.ppo.miniBatchSize);
-				report["Model Updates/Second"] = modelUpdatesThisIteration / ppoLearnTime;
-				report["Optimization SPS"] = (int64_t)((timestepsCollected * config.ppo.epochs) / ppoLearnTime);
+				report["Learner/Model Updates per Second"] = modelUpdatesThisIteration / ppoLearnTime;
+				report["Learner/Optimization SPS"] = (int64_t)((timestepsCollected * config.ppo.epochs) / ppoLearnTime);
 			} else {
-				report["Model Updates/Second"] = 0;
-				report["Optimization SPS"] = 0;
+				report["Learner/Model Updates per Second"] = 0;
+				report["Learner/Optimization SPS"] = 0;
 			}
-			report["Timesteps Collected"] = timestepsCollected;
-			report["Cumulative Timesteps"] = totalTimesteps;
+			report["Learner/Timesteps Collected"] = timestepsCollected;
+			report["Learner/Cumulative Timesteps"] = totalTimesteps;
 		}
 
 		// Call iteration callback
@@ -786,10 +786,10 @@ void RLGPC::Learner::AddNewExperience(GameTrajectory& gameTraj, Report& report) 
 	for (float f : returns)
 		avgRet += abs(f);
 	avgRet /= returns.size();
-	report["Avg Return"] = avgRet / retStd;
+	report["Learner/Avg Return"] = avgRet / retStd;
 
-	report["Avg Advantage"] = advantages.abs().mean().item<float>();
-	report["Avg Val Target"] = valueTargets.abs().mean().item<float>();
+	report["Learner/Avg Advantage"] = advantages.abs().mean().item<float>();
+	report["Learner/Avg Val Target"] = valueTargets.abs().mean().item<float>();
 
 	if (config.standardizeReturns) {
 		int numToIncrement = RS_MIN(config.maxReturnsPerStatsInc, returns.size());

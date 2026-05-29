@@ -153,7 +153,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 				Timer timer = {};
 				if (autocast) RG_AUTOCAST_ON();
 				auto vals = valueNet->Forward(obs); // 11%
-				recordTime("PPO Value Estimate Time", timer.Elapsed());
+				recordTime("Learner/PPO Value Estimate Time", timer.Elapsed());
 
 				timer.Reset();
 				torch::Tensor logProbs, entropy, ratio, clipped, policyLoss, ppoLoss;
@@ -165,7 +165,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					entropy = bpResult.entropy;
 
 					logProbs = logProbs.view_as(oldProbs);
-					recordTime("PPO Backprop Data Time", timer.Elapsed());
+					recordTime("Learner/PPO Backprop Data Time", timer.Elapsed());
 
 					// Compute PPO loss
 					ratio = exp(logProbs - oldProbs);
@@ -233,7 +233,7 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 					}
 				}
 
-				recordTime("PPO Gradient Time", timer.Elapsed());
+				recordTime("Learner/PPO Gradient Time", timer.Elapsed());
 				{
 					std::lock_guard<std::mutex> lock(threadUpdateMutex);
 
@@ -348,22 +348,22 @@ void RLGPC::PPOLearner::Learn(ExperienceBuffer* expBuffer, Report& report) {
 
 	// Assemble and return report
 	cumulativeModelUpdates += numIterations;
-	report["PPO Batch Consumption Time"] = totalTime / numIterations;
-	report["Cumulative Model Updates"] = cumulativeModelUpdates;
-	report["Policy Entropy"] = meanEntropy;
-	report["Mean KL Divergence"] = meanDivergence;
-	report["Mean Ratio"] = meanRatio;
-	report["Value Function Loss"] = meanValLoss;
-	report["SB3 Clip Fraction"] = meanClip;
-	report["Policy Update Magnitude"] = policyUpdateMagnitude;
-	report["Value Function Update Magnitude"] = criticUpdateMagnitude;
-	report["PPO Learn Time"] = totalTimer.Elapsed();
+	report["Learner/PPO Batch Consumption Time"] = totalTime / numIterations;
+	report["Learner/Cumulative Model Updates"] = cumulativeModelUpdates;
+	report["Learner/Policy Entropy"] = meanEntropy;
+	report["Learner/Mean KL Divergence"] = meanDivergence;
+	report["Learner/Mean Ratio"] = meanRatio;
+	report["Learner/Value Function Loss"] = meanValLoss;
+	report["Learner/SB3 Clip Fraction"] = meanClip;
+	report["Learner/Policy Update Magnitude"] = policyUpdateMagnitude;
+	report["Learner/Value Function Update Magnitude"] = criticUpdateMagnitude;
+	report["Learner/PPO Learn Time"] = totalTimer.Elapsed();
 
 	if (config.measureGradientNoise) {
 		if (noiseTrackerPolicy->lastNoiseScale != 0)
-			report["Grad Noise Policy"] = noiseTrackerPolicy->lastNoiseScale;
+			report["Learner/Grad Noise Policy"] = noiseTrackerPolicy->lastNoiseScale;
 		if (noiseTrackerValueNet->lastNoiseScale != 0)
-			report["Grad Noise Value Net"] = noiseTrackerValueNet->lastNoiseScale;
+			report["Learner/Grad Noise Value Net"] = noiseTrackerValueNet->lastNoiseScale;
 	}
 
 	policyOptimizer->zero_grad();
