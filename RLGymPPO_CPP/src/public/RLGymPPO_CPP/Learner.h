@@ -6,6 +6,8 @@
 #include "Util/RenderSender.h"
 #include "LearnerConfig.h"
 #include <memory>
+#include <functional>
+#include <filesystem>
 
 namespace torch {
     namespace nn {
@@ -16,6 +18,7 @@ namespace torch {
 namespace RLGPC {
 
 	typedef std::function<void(class Learner*, Report&)> IterationCallback;
+	typedef std::function<void(class Learner*, std::filesystem::path)> SaveCallback;
 
 	// https://github.com/AechPro/rlgym-ppo/blob/main/rlgym_ppo/learner.py
 	class RG_IMEXPORT Learner {
@@ -67,6 +70,7 @@ namespace RLGPC {
 
 		IterationCallback iterationCallback = NULL;
 		StepCallback stepCallback = NULL;
+		SaveCallback saveCallback = nullptr;
 
 		RG_NO_COPY(Learner);
 

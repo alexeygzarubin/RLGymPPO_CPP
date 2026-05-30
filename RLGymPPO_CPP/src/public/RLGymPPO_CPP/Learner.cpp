@@ -304,6 +304,10 @@ void RLGPC::Learner::Save() {
 	SaveStats(saveFolder / STATS_FILE_NAME);
 	ppo->SaveTo(saveFolder);
 
+	if (saveCallback) {
+		saveCallback(this, saveFolder);
+	}
+
 	// Remove old checkpoints
 	if (config.checkpointsToKeep != -1) {
 		int numCheckpoints = 0;
