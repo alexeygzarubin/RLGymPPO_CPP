@@ -5,6 +5,8 @@
 #include <RLGymPPO_CPP/Util/WelfordRunningStat.h>
 #include <RLGymPPO_CPP/Util/Timer.h>
 #include <RLGymPPO_CPP/Util/RenderSender.h>
+#include <shared_mutex>
+#include <atomic>
 
 namespace RLGPC {
 	class ThreadAgentManager {
@@ -24,7 +26,9 @@ namespace RLGPC {
 		bool renderDuringTraining = false;
 		float renderTimeScale = 1.f;
 
-		bool disableCollection = false; // Prevents new steps from being started
+		// Lock ordering constraint: inferMutex -> policyCopyMutex. Learner must never acquire inferMutex.
+		std::shared_mutex policyCopyMutex = {};
+		std::atomic<bool> disableCollection = false; // Prevents new steps from being started
 
 		Timer iterationTimer = {};
 		double lastIterationTime = 0;

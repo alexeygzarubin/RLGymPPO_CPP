@@ -1,5 +1,5 @@
 #include "Learner.h"
-#include "Learner.h"
+#include <shared_mutex>
 
 #include "../../private/RLGymPPO_CPP/Util/SkillTracker.h"
 
@@ -17,6 +17,7 @@
 #endif
 
 RLGPC::Learner::Learner(EnvCreateFn envCreateFn, LearnerConfig _config) :
+	inferDeviceIsCPU(_config.deviceType == LearnerDeviceType::SPLIT_CPU_INFER_GPU_LEARN || _config.deviceType == LearnerDeviceType::CPU || (_config.deviceType == LearnerDeviceType::AUTO && !torch::cuda::is_available())),
 	envCreateFn(envCreateFn),
 	config(_config)
 {
@@ -525,6 +526,8 @@ void RLGPC::Learner::Learn() {
 	RG_LOG("Learner::Learn():");
 
 	if (policyInfer) {
+		RG_LOG("\tSyncing initial weights to inference policy...");
+		std::unique_lock<std::shared_mutex> lock(agentMgr->policyCopyMutex);
 		_CopyModelParams(ppo->policy.get(), policyInfer.get());
 		if (policyInferHalf && ppo->policyHalf) {
 			_CopyModelParams(ppo->policyHalf.get(), policyInferHalf.get());
@@ -566,7 +569,7 @@ void RLGPC::Learner::Learn() {
 		}
 
 		if (!config.collectionDuringLearn)
-			agentMgr->disableCollection = true;
+			agentMgr->disableCollection.store(true, std::memory_order_release);
 
 		// Add it to our experience buffer, also computing GAE in the process
 		try {
@@ -581,7 +584,9 @@ void RLGPC::Learner::Learn() {
 		// This is because learning is very GPU intensive, and letting iterations collect during that time slows it down
 		// On CPU, learning is its own thread, it's better to keep collecting
 		// Also, if config.collectionDuringLearn is false, we ignore this
-		bool blockAgentInferDuringLearn = config.collectionDuringLearn && !device.is_cpu();
+		// In split device mode, we don't block CPU inference. But we do block if decoupled inference policy is missing.
+		// (Guards against future configurations that might not instantiate policyInfer in CPU mode).
+		bool blockAgentInferDuringLearn = config.collectionDuringLearn && (!inferDeviceIsCPU || policyInfer == nullptr);
 		{ // Run the actual PPO learning on the experience we have collected
 			
 			if (config.deterministic) {
@@ -593,7 +598,7 @@ void RLGPC::Learner::Learn() {
 
 			RG_LOG("Learning...");
 			if (blockAgentInferDuringLearn)
-				agentMgr->disableCollection = true;
+				agentMgr->disableCollection.store(true, std::memory_order_release);
 
 			try {
 				ppo->Learn(expBuffer.get(), report);
@@ -604,6 +609,7 @@ void RLGPC::Learner::Learn() {
 			totalEpochs += config.ppo.epochs;
 
 			if (policyInfer) {
+				std::unique_lock<std::shared_mutex> lock(agentMgr->policyCopyMutex);
 				_CopyModelParams(ppo->policy.get(), policyInfer.get());
 				if (policyInferHalf && ppo->policyHalf) {
 					_CopyModelParams(ppo->policyHalf.get(), policyInferHalf.get());
@@ -615,7 +621,7 @@ void RLGPC::Learner::Learn() {
 			// workers would resume inference and read half-written parameters,
 			// crashing in matmul or index_copy_ (SEH 0xc0000005).
 			if (blockAgentInferDuringLearn)
-				agentMgr->disableCollection = false;
+				agentMgr->disableCollection.store(false, std::memory_order_release);
 		}
 
 		// Free CUDA cache
@@ -647,7 +653,7 @@ void RLGPC::Learner::Learn() {
 		agentMgr->GetMetrics(report);
 
 		if (!config.collectionDuringLearn) {
-			agentMgr->disableCollection = false;
+			agentMgr->disableCollection.store(false, std::memory_order_release);
 		}
 
 		// If we collect during consuption, don't just measure the time we waited for to collect for steps

@@ -20,6 +20,7 @@ namespace RLGPC {
 	// https://github.com/AechPro/rlgym-ppo/blob/main/rlgym_ppo/learner.py
 	class RG_IMEXPORT Learner {
 	public:
+		const bool inferDeviceIsCPU;
 		LearnerConfig config;
 
 		std::unique_ptr<class PPOLearner> ppo;

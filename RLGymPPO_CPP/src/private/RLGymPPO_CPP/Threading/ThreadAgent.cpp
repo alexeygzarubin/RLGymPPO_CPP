@@ -1,7 +1,7 @@
 #include "ThreadAgent.h"
-
 #include "ThreadAgentManager.h"
 #include <RLGymPPO_CPP/Util/Timer.h>
+#include <shared_mutex>
 
 using namespace RLGPC;
 
@@ -97,10 +97,10 @@ void _RunFunc(ThreadAgent* ta) {
 			stepTimer.Reset();
 
 		// Don't run if we reached our step limit
-		while (ta->stepsCollected > ta->maxCollect)
+		while (ta->stepsCollected.load(std::memory_order_acquire) > ta->maxCollect)
 			THREAD_WAIT();
 
-		while (mgr->disableCollection)
+		while (mgr->disableCollection.load(std::memory_order_acquire))
 			THREAD_WAIT();
 
 		// Move our current OBS tensor to the device we run the policy on
@@ -116,17 +116,16 @@ void _RunFunc(ThreadAgent* ta) {
 		Timer policyInferTimer = {};
 		
 
+		std::unique_lock<std::mutex> inferLock(mgr->inferMutex, std::defer_lock);
 		if (blockConcurrentInfer)
-			mgr->inferMutex.lock();
+			inferLock.lock();
 		RLGPC::DiscretePolicy::ActionResult actionResults;
 		try {
+			std::shared_lock<std::shared_mutex> lock(mgr->policyCopyMutex);
 			actionResults = policy->GetAction(curObsTensorDevice, deterministic);
 		} catch (std::exception& e) {
-			if (blockConcurrentInfer) mgr->inferMutex.unlock();
 			throw std::runtime_error(std::string("ThreadAgent::_RunFunc: Exception during policy->GetAction(): ") + e.what());
 		}
-		if (blockConcurrentInfer)
-			mgr->inferMutex.unlock();
 		if (halfPrec) {
 			actionResults.action = actionResults.action.to(torch::ScalarType::Float);
 			actionResults.logProb = actionResults.logProb.to(torch::ScalarType::Float);
