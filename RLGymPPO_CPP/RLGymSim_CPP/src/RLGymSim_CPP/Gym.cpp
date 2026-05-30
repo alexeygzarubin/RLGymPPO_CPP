@@ -38,7 +38,12 @@ namespace RLGSC {
 	}
 
 	Gym::Gym(Match* match, int tickSkip, CarConfig carConfig, GameMode gameMode, MutatorConfig mutatorConfig) :
-		match(match), tickSkip(tickSkip), actionDelay(tickSkip - 1) {
+		match(match), tickSkip(tickSkip), 
+		// yexela-c: Fixes severe event-tracking bug by setting actionDelay to 0 instead of tickSkip - 1 (7).
+		// By doing this, we step the environment for the full 8 ticks in a single Step(8) call.
+		// All event callbacks (bumps, demos, saves, shots, assists, goals) will trigger and successfully
+		// propagate their counters into state/prevState, rather than being wiped out by the prevState copy.
+		actionDelay(0) {
 		arena = Arena::Create(gameMode);
 		arena->SetMutatorConfig(mutatorConfig);
 
